@@ -109,45 +109,45 @@
 
     loadScripts();
 
-    async function loadScripts() {
-      try {
-        const res = await fetch('/api/admin/scripts');
-        const scripts = await res.json();
-        const container = document.getElementById('scriptsList');
-        
-        if (!scripts || scripts.length === 0) {
-          container.innerHTML = '<p class="text-gray-500">No hay scripts todavía</p>';
-          return;
-        }
-
-        const baseUrl = window.location.origin;
-
-        container.innerHTML = scripts.map(s => `
-          <div class="card p-5 rounded-2xl">
-            <div class="flex justify-between items-start mb-3">
-              <div>
-                <h3 class="font-bold text-lg">${s.name}</h3>
-                <p class="text-gray-400 text-sm">${s.description || 'Sin descripción'}</p>
-                <p class="text-xs text-purple-400 mt-1">ID: ${s.id} • Visitas: ${s.visits || 0}</p>
-              </div>
-              <div class="flex gap-2">
-                <button onclick="editScript('${s.id}')" class="text-sm bg-[#2d2d3a] px-3 py-1.5 rounded-lg hover:bg-[#3a3a4a]">Editar</button>
-                <button onclick="deleteScript('${s.id}')" class="text-sm bg-red-900/40 text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-900/60">Eliminar</button>
-              </div>
-            </div>
-
-            <div class="bg-[#12121a] rounded-xl p-3 mt-3">
-              <p class="text-xs text-gray-400 mb-1">Loadstring (copia y pega):</p>
-              <code class="text-green-400 text-xs break-all select-all">
-loadstring(game:HttpGet("${baseUrl}/api/script/${s.id}?key=TU_KEY_AQUI"))()
-              </code>
-            </div>
-          </div>
-        `).join('');
-      } catch (err) {
-        document.getElementById('scriptsList').innerHTML = '<p class="text-red-400">Error cargando scripts</p>';
-      }
+async function loadScripts() {
+  try {
+    const res = await fetch('/api/admin/scripts');
+    const scripts = await res.json();
+    const container = document.getElementById('scriptsList');
+    
+    if (!scripts || scripts.length === 0) {
+      container.innerHTML = '<p class="text-gray-500">No hay scripts todavía</p>';
+      return;
     }
+
+    const baseUrl = window.location.origin;
+
+    container.innerHTML = scripts.map(s => `
+      <div class="card p-5 rounded-2xl">
+        <div class="flex justify-between items-start mb-3">
+          <div>
+            <h3 class="font-bold text-lg">${s.name}</h3>
+            <p class="text-gray-400 text-sm">${s.description || 'Sin descripción'}</p>
+            <p class="text-xs text-purple-400 mt-1">ID: ${s.id} • Visitas: ${s.visits || 0}</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="editScript('${s.id}')" class="text-sm bg-[#2d2d3a] px-3 py-1.5 rounded-lg hover:bg-[#3a3a4a]">Editar</button>
+            <button onclick="deleteScript('${s.id}')" class="text-sm bg-red-900/40 text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-900/60">Eliminar</button>
+          </div>
+        </div>
+
+        <div class="bg-[#12121a] rounded-xl p-3 mt-3">
+          <p class="text-xs text-gray-400 mb-1">Loadstring (copia y pega):</p>
+          <code class="text-green-400 text-xs break-all select-all">
+loadstring(game:HttpGet("${baseUrl}/api/script/${s.id}"))()
+          </code>
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    document.getElementById('scriptsList').innerHTML = '<p class="text-red-400">Error cargando scripts</p>';
+  }
+}
 
     function editScript(id) {
       fetch('/api/admin/scripts')
