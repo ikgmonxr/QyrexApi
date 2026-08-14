@@ -1,168 +1,290 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QyrexObfApi | Secure Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QYREX Script Hub | Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { background: #0f0f13; color: #e2e8f0; }
+    .card { background: #1a1a24; border: 1px solid #2d2d3a; }
+    .btn { transition: all 0.2s; }
+    .btn:hover { transform: translateY(-1px); }
+  </style>
 </head>
-<body class="bg-slate-950 text-slate-100 font-sans selection:bg-blue-600 selection:text-white">
+<body class="min-h-screen">
+  <!-- LOGIN -->
+  <div id="loginScreen" class="fixed inset-0 bg-[#0f0f13] flex items-center justify-center z-50">
+    <div class="card p-8 rounded-2xl w-full max-w-md shadow-2xl">
+      <h1 class="text-3xl font-bold text-center mb-2 bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent">QYREX Hub</h1>
+      <p class="text-center text-gray-400 mb-6">Dashboard de Scripts</p>
+      <input id="password" type="password" placeholder="Contraseña de admin" class="w-full bg-[#12121a] border border-[#2d2d3a] rounded-xl px-4 py-3 mb-4 focus:outline-none focus:border-purple-500">
+      <button onclick="login()" class="btn w-full bg-gradient-to-r from-purple-600 to-pink-600 py-3 rounded-xl font-semibold">Entrar</button>
+      <p id="loginError" class="text-red-400 text-sm mt-3 text-center hidden">Contraseña incorrecta</p>
+    </div>
+  </div>
 
-    <!-- Navbar -->
-    <nav class="border-b border-slate-800 bg-slate-900/50 backdrop-blur sticky top-0 z-50 px-8 py-4 flex justify-between items-center">
-        <div class="flex items-center space-x-3">
-            <div class="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
-            <span class="text-xl font-extrabold tracking-wider bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent">QYREX OBF API</span>
-        </div>
-        <div class="space-x-6 text-sm font-medium text-slate-400">
-            <a href="#dashboard" class="hover:text-white transition">Dashboard</a>
-            <a href="#scripts" class="hover:text-white transition">Scripts</a>
-            <a href="#upload" class="hover:text-white transition">Subir Script</a>
-        </div>
+  <!-- DASHBOARD -->
+  <div id="dashboard" class="hidden">
+    <nav class="border-b border-[#2d2d3a] bg-[#12121a] px-6 py-4 flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500"></div>
+        <span class="font-bold text-xl">QYREX Dashboard</span>
+      </div>
+      <button onclick="logout()" class="text-sm text-gray-400 hover:text-white">Cerrar sesión</button>
     </nav>
 
-    <main class="max-w-6xl mx-auto p-6 space-y-8 mt-4">
+    <div class="flex">
+      <!-- Sidebar -->
+      <aside class="w-64 border-r border-[#2d2d3a] min-h-[calc(100vh-65px)] p-4 space-y-2">
+        <button onclick="showTab('scripts')" class="tab-btn w-full text-left px-4 py-3 rounded-xl hover:bg-[#1a1a24]">📜 Scripts</button>
+        <button onclick="showTab('upload')" class="tab-btn w-full text-left px-4 py-3 rounded-xl hover:bg-[#1a1a24]">⬆️ Subir Script</button>
+        <button onclick="showTab('keys')" class="tab-btn w-full text-left px-4 py-3 rounded-xl hover:bg-[#1a1a24]">🔑 Keys</button>
+        <button onclick="showTab('stats')" class="tab-btn w-full text-left px-4 py-3 rounded-xl hover:bg-[#1a1a24]">📊 Visitas & Stats</button>
+      </aside>
 
-        <!-- Header Stats Grid -->
-        <div id="dashboard" class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="bg-slate-900/80 border border-slate-800 p-6 rounded-2xl shadow-xl">
-                <div class="flex justify-between items-center">
-                    <span class="text-slate-400 text-xs font-semibold uppercase tracking-wider">Visitas Totales</span>
-                    <i data-lucide="eye" class="text-blue-400 w-5 h-5"></i>
-                </div>
-                <h2 id="stat-visits" class="text-3xl font-bold mt-3">1,420</h2>
-            </div>
-            <div class="bg-slate-900/80 border border-slate-800 p-6 rounded-2xl shadow-xl">
-                <div class="flex justify-between items-center">
-                    <span class="text-slate-400 text-xs font-semibold uppercase tracking-wider">Scripts Activos</span>
-                    <i data-lucide="code" class="text-indigo-400 w-5 h-5"></i>
-                </div>
-                <h2 id="stat-scripts" class="text-3xl font-bold mt-3">2</h2>
-            </div>
-            <div class="bg-slate-900/80 border border-slate-800 p-6 rounded-2xl shadow-xl">
-                <div class="flex justify-between items-center">
-                    <span class="text-slate-400 text-xs font-semibold uppercase tracking-wider">Estado de la API</span>
-                    <i data-lucide="shield-check" class="text-emerald-400 w-5 h-5"></i>
-                </div>
-                <h2 id="stat-status" class="text-3xl font-bold mt-3 text-emerald-400">Online</h2>
-            </div>
+      <!-- Content -->
+      <main class="flex-1 p-8">
+        <!-- SCRIPTS -->
+        <div id="tab-scripts" class="tab-content">
+          <h2 class="text-2xl font-bold mb-6">Mis Scripts</h2>
+          <div id="scriptsList" class="grid gap-4"></div>
         </div>
 
-        <!-- Charts Section -->
-        <div class="bg-slate-900/80 border border-slate-800 p-6 rounded-2xl shadow-xl">
-            <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
-                <i data-lucide="trending-up" class="w-5 h-5 text-blue-400"></i> Flujo de Tráfico del API
-            </h3>
-            <div class="h-64">
-                <canvas id="trafficChart"></canvas>
-            </div>
+        <!-- UPLOAD -->
+        <div id="tab-upload" class="tab-content hidden">
+          <h2 class="text-2xl font-bold mb-6">Subir / Editar Script</h2>
+          
+          <div class="card p-6 rounded-2xl mb-6 border-purple-500/30">
+            <p class="text-purple-300 font-medium mb-2">🔒 Ofuscador 100% recomendado y hecho por nosotros:</p>
+            <a href="https://qyrexobf.onrender.com/" target="_blank" class="text-pink-400 underline hover:text-pink-300">
+              https://qyrexobf.onrender.com/
+            </a>
+            <p class="text-sm text-gray-400 mt-2">Ofusca tu script ahí antes de subirlo. Es el más seguro y compatible.</p>
+          </div>
+
+          <div class="card p-6 rounded-2xl space-y-4">
+            <input id="scriptName" placeholder="Nombre del script" class="w-full bg-[#12121a] border border-[#2d2d3a] rounded-xl px-4 py-3">
+            <input id="scriptDesc" placeholder="Descripción corta" class="w-full bg-[#12121a] border border-[#2d2d3a] rounded-xl px-4 py-3">
+            <textarea id="scriptCode" rows="12" placeholder="Pega aquí el script YA OFUSCADO..." class="w-full bg-[#12121a] border border-[#2d2d3a] rounded-xl px-4 py-3 font-mono text-sm"></textarea>
+            <button onclick="saveScript()" class="btn bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-3 rounded-xl font-semibold">Guardar Script</button>
+          </div>
         </div>
 
-        <!-- Seccion: Panel de Scripts -->
-        <div id="scripts" class="bg-slate-900/80 border border-slate-800 p-6 rounded-2xl shadow-xl">
-            <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
-                <i data-lucide="terminal" class="w-5 h-5 text-indigo-400"></i> Scripts Registrados
-            </h3>
-            <div id="scripts-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                    <span class="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded">v1.2</span>
-                    <h4 class="font-bold mt-2">Aimbot Pro V4</h4>
-                    <p class="text-xs text-slate-400 mt-1 font-mono">print('Loaded Aimbot')</p>
-                </div>
-                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                    <span class="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded">v2.0</span>
-                    <h4 class="font-bold mt-2">ESP Box + Distance</h4>
-                    <p class="text-xs text-slate-400 mt-1 font-mono">print('Loaded ESP')</p>
-                </div>
-            </div>
+        <!-- KEYS -->
+        <div id="tab-keys" class="tab-content hidden">
+          <div class="flex justify-between items-center mb-6">
+            <h2 class="text-2xl font-bold">Sistema de Keys</h2>
+            <button onclick="generateKey()" class="btn bg-green-600 hover:bg-green-500 px-5 py-2 rounded-xl">+ Generar Key</button>
+          </div>
+          <p class="text-gray-400 mb-4 text-sm">Estas keys se pueden vender con <b>Work.ink</b> o <b>Lootbits</b>. El usuario pone la key en el ejecutor.</p>
+          <div id="keysList" class="space-y-3"></div>
         </div>
 
-        <!-- Seccion: Subir Script con Ofuscador Integrado -->
-        <div id="upload" class="bg-slate-900/80 border border-slate-800 p-8 rounded-2xl shadow-xl">
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                <div>
-                    <h3 class="text-xl font-bold">Subir y Proteger Script</h3>
-                    <p class="text-slate-400 text-sm">Sube tu código de Roblox de forma segura a la base de datos.</p>
-                </div>
-                <a href="https://qyrexobf.onrender.com/" target="_blank" class="bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 px-4 py-2 rounded-xl text-xs font-semibold hover:bg-indigo-600/30 transition flex items-center gap-2">
-                    <i data-lucide="lock" class="w-4 h-4"></i> Usar Ofuscador Qyrex (100% Recomendado)
-                </a>
+        <!-- STATS -->
+        <div id="tab-stats" class="tab-content hidden">
+          <h2 class="text-2xl font-bold mb-6">Visitas & Estadísticas</h2>
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div class="card p-5 rounded-2xl">
+              <p class="text-gray-400 text-sm">Scripts</p>
+              <p id="statScripts" class="text-3xl font-bold">0</p>
             </div>
-            
-            <form id="upload-form" class="space-y-4">
-                <div>
-                    <label class="block text-xs uppercase text-slate-400 font-semibold mb-2">Nombre del Script</label>
-                    <input type="text" id="script-name" required placeholder="Ej. Hub de Combate V1" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition">
-                </div>
-                <div>
-                    <label class="block text-xs uppercase text-slate-400 font-semibold mb-2">Pon tu script aqui (Pega el código limpio u ofuscado)</label>
-                    <textarea id="script-code" required rows="5" placeholder="print('Hello Roblox Studio');" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none transition"></textarea>
-                </div>
-                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition shadow-lg shadow-blue-600/20">
-                    Registrar en QyrexObfApi
-                </button>
-            </form>
+            <div class="card p-5 rounded-2xl">
+              <p class="text-gray-400 text-sm">Keys Activas</p>
+              <p id="statKeys" class="text-3xl font-bold">0</p>
+            </div>
+            <div class="card p-5 rounded-2xl">
+              <p class="text-gray-400 text-sm">Visitas Totales</p>
+              <p id="statVisits" class="text-3xl font-bold">0</p>
+            </div>
+            <div class="card p-5 rounded-2xl">
+              <p class="text-gray-400 text-sm">Últimas 24h</p>
+              <p id="statRecent" class="text-3xl font-bold">-</p>
+            </div>
+          </div>
+          <div class="card p-6 rounded-2xl">
+            <canvas id="visitsChart" height="100"></canvas>
+          </div>
         </div>
+      </main>
+    </div>
+  </div>
 
-    </main>
+  <script>
+    let token = localStorage.getItem('qyrex_token') || '';
+    let editingId = null;
 
-    <!-- Script de lógica Frontend -->
-    <script>
-        lucide.createIcons();
+    async function login() {
+      const pass = document.getElementById('password').value;
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pass })
+      });
+      const data = await res.json();
+      if (data.success) {
+        token = data.token;
+        localStorage.setItem('qyrex_token', token);
+        document.getElementById('loginScreen').classList.add('hidden');
+        document.getElementById('dashboard').classList.remove('hidden');
+        loadAll();
+      } else {
+        document.getElementById('loginError').classList.remove('hidden');
+      }
+    }
 
-        // Reemplaza esta URL con la de tu servidor en Render cuando lo despliegues
-        const API_URL = 'http://localhost:3000';
+    function logout() {
+      localStorage.removeItem('qyrex_token');
+      location.reload();
+    }
 
-        // Manejar envío del formulario de scripts
-        document.getElementById('upload-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const name = document.getElementById('script-name').value;
-            const code = document.getElementById('script-code').value;
+    if (token) {
+      document.getElementById('loginScreen').classList.add('hidden');
+      document.getElementById('dashboard').classList.remove('hidden');
+      loadAll();
+    }
 
-            try {
-                const res = await fetch(`${API_URL}/api/upload`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, code })
-                });
-                const result = await res.json();
-                if(result.success) {
-                    alert('¡Script subido con éxito a QyrexObfApi!');
-                    document.getElementById('upload-form').reset();
-                }
-            } catch (err) {
-                alert('Hubo un error al conectar con el servidor backend.');
-            }
+    function showTab(name) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.getElementById('tab-' + name).classList.remove('hidden');
+      if (name === 'scripts') loadScripts();
+      if (name === 'keys') loadKeys();
+      if (name === 'stats') loadStats();
+    }
+
+    async function loadAll() {
+      loadScripts();
+      loadKeys();
+      loadStats();
+    }
+
+    async function loadScripts() {
+      const res = await fetch('/api/admin/scripts', { headers: { 'x-admin-token': token } });
+      const scripts = await res.json();
+      const container = document.getElementById('scriptsList');
+      container.innerHTML = scripts.map(s => `
+        <div class="card p-5 rounded-2xl flex justify-between items-start">
+          <div>
+            <h3 class="font-bold text-lg">${s.name}</h3>
+            <p class="text-gray-400 text-sm">${s.description || 'Sin descripción'}</p>
+            <p class="text-xs text-purple-400 mt-2">ID: ${s.id} • Visitas: ${s.visits || 0}</p>
+            <p class="text-xs text-gray-500 mt-1">Endpoint: /api/script/${s.id}</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="editScript('${s.id}')" class="text-sm bg-[#2d2d3a] px-3 py-1 rounded-lg">Editar</button>
+            <button onclick="deleteScript('${s.id}')" class="text-sm bg-red-900/50 text-red-300 px-3 py-1 rounded-lg">Eliminar</button>
+          </div>
+        </div>
+      `).join('') || '<p class="text-gray-500">No hay scripts todavía</p>';
+    }
+
+    function editScript(id) {
+      fetch('/api/admin/scripts', { headers: { 'x-admin-token': token } })
+        .then(r => r.json())
+        .then(scripts => {
+          const s = scripts.find(x => x.id === id);
+          if (!s) return;
+          editingId = id;
+          document.getElementById('scriptName').value = s.name;
+          document.getElementById('scriptDesc').value = s.description || '';
+          document.getElementById('scriptCode').value = s.code;
+          showTab('upload');
         });
+    }
 
-        // Inicializar Gráfica de Tráfico con Chart.js
-        const ctx = document.getElementById('trafficChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'],
-                datasets: [{
-                    label: 'Peticiones al API',
-                    data: [120, 190, 300, 250, 420, 600, 750],
-                    borderColor: '#3b82f6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { grid: { color: 'rgba(255,255,255,0.05)' } },
-                    y: { grid: { color: 'rgba(255,255,255,0.05)' } }
-                }
-            }
-        });
-    </script>
+    async function saveScript() {
+      const body = {
+        name: document.getElementById('scriptName').value,
+        description: document.getElementById('scriptDesc').value,
+        code: document.getElementById('scriptCode').value
+      };
+      const url = editingId ? `/api/admin/scripts/${editingId}` : '/api/admin/scripts';
+      const method = editingId ? 'PUT' : 'POST';
+      await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
+        body: JSON.stringify(body)
+      });
+      editingId = null;
+      document.getElementById('scriptName').value = '';
+      document.getElementById('scriptDesc').value = '';
+      document.getElementById('scriptCode').value = '';
+      showTab('scripts');
+      alert('Script guardado correctamente');
+    }
+
+    async function deleteScript(id) {
+      if (!confirm('¿Eliminar este script?')) return;
+      await fetch(`/api/admin/scripts/${id}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-token': token }
+      });
+      loadScripts();
+    }
+
+    async function loadKeys() {
+      const res = await fetch('/api/admin/keys', { headers: { 'x-admin-token': token } });
+      const keys = await res.json();
+      document.getElementById('keysList').innerHTML = keys.map(k => `
+        <div class="card p-4 rounded-xl flex justify-between items-center">
+          <div>
+            <code class="text-green-400 font-mono">${k.key}</code>
+            <p class="text-xs text-gray-500 mt-1">${k.note} • ${new Date(k.createdAt).toLocaleString()}</p>
+          </div>
+          <button onclick="deleteKey('${k.key}')" class="text-red-400 text-sm">Eliminar</button>
+        </div>
+      `).join('') || '<p class="text-gray-500">No hay keys generadas</p>';
+    }
+
+    async function generateKey() {
+      const note = prompt('Nota de la key (opcional):', 'Key de Work.ink');
+      await fetch('/api/admin/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
+        body: JSON.stringify({ note })
+      });
+      loadKeys();
+    }
+
+    async function deleteKey(key) {
+      if (!confirm('¿Eliminar esta key?')) return;
+      await fetch(`/api/admin/keys/${key}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-token': token }
+      });
+      loadKeys();
+    }
+
+    async function loadStats() {
+      const res = await fetch('/api/admin/stats', { headers: { 'x-admin-token': token } });
+      const stats = await res.json();
+      document.getElementById('statScripts').textContent = stats.totalScripts;
+      document.getElementById('statKeys').textContent = stats.activeKeys;
+      document.getElementById('statVisits').textContent = stats.totalVisits;
+
+      // Gráfica simple
+      const ctx = document.getElementById('visitsChart').getContext('2d');
+      if (window.myChart) window.myChart.destroy();
+      window.myChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: stats.recentVisits.map((_, i) => `#${i+1}`).reverse(),
+          datasets: [{
+            label: 'Visitas recientes',
+            data: stats.recentVisits.map(() => 1).reverse(),
+            borderColor: '#a855f7',
+            backgroundColor: 'rgba(168,85,247,0.1)',
+            tension: 0.3,
+            fill: true
+          }]
+        },
+        options: {
+          scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+  </script>
 </body>
 </html>
