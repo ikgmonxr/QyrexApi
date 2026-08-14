@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IKGO HUB | Secure Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans selection:bg-blue-600 selection:text-white">
+
+    <!-- Navbar -->
+    <nav class="border-b border-slate-800 bg-slate-900/50 backdrop-blur sticky top-0 z-50 px-8 py-4 flex justify-between items-center">
+        <div class="flex items-center space-x-3">
+            <div class="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
+            <span class="text-xl font-extrabold tracking-wider bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent">IKGONAVID HUB</span>
+        </div>
+        <div class="space-x-6 text-sm font-medium text-slate-400">
+            <a href="#dashboard" class="hover:text-white transition">Dashboard</a>
+            <a href="#scripts" class="hover:text-white transition">Scripts</a>
+            <a href="#upload" class="hover:text-white transition">Subir Script</a>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto p-6 space-y-8 mt-4">
+
+        <!-- Header Stats Grid -->
+        <div id="dashboard" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="bg-slate-900/80 border border-slate-800 p-6 rounded-2xl shadow-xl">
+                <div class="flex justify-between items-center">
+                    <span class="text-slate-400 text-xs font-semibold uppercase tracking-wider">Visitas Totales</span>
+                    <i data-lucide="eye" class="text-blue-400 w-5 h-5"></i>
+                </div>
+                <h2 id="stat-visits" class="text-3xl font-bold mt-3">Cargando...</h2>
+            </div>
+            <div class="bg-slate-900/80 border border-slate-800 p-6 rounded-2xl shadow-xl">
+                <div class="flex justify-between items-center">
+                    <span class="text-slate-400 text-xs font-semibold uppercase tracking-wider">Scripts Activos</span>
+                    <i data-lucide="code" class="text-indigo-400 w-5 h-5"></i>
+                </div>
+                <h2 id="stat-scripts" class="text-3xl font-bold mt-3">Cargando...</h2>
+            </div>
+            <div class="bg-slate-900/80 border border-slate-800 p-6 rounded-2xl shadow-xl">
+                <div class="flex justify-between items-center">
+                    <span class="text-slate-400 text-xs font-semibold uppercase tracking-wider">Estado de la API</span>
+                    <i data-lucide="shield-check" class="text-emerald-400 w-5 h-5"></i>
+                </div>
+                <h2 id="stat-status" class="text-3xl font-bold mt-3 text-emerald-400">Online</h2>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="bg-slate-900/80 border border-slate-800 p-6 rounded-2xl shadow-xl">
+            <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                <i data-lucide="trending-up" class="w-5 h-5 text-blue-400"></i> Flujo de Tráfico Semanal
+            </h3>
+            <div class="h-64">
+                <canvas id="trafficChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Seccion: Panel de Scripts -->
+        <div id="scripts" class="bg-slate-900/80 border border-slate-800 p-6 rounded-2xl shadow-xl">
+            <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                <i data-lucide="terminal" class="w-5 h-5 text-indigo-400"></i> Scripts Registrados
+            </h3>
+            <div id="scripts-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Se llena mediante JavaScript -->
+            </div>
+        </div>
+
+        <!-- Seccion: Subir Script con Ofuscador Integrado -->
+        <div id="upload" class="bg-slate-900/80 border border-slate-800 p-8 rounded-2xl shadow-xl">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                <div>
+                    <h3 class="text-xl font-bold">Subir y Proteger Script</h3>
+                    <p class="text-slate-400 text-sm">Sube tu código de Roblox de forma segura a la base de datos.</p>
+                </div>
+                <a href="https://qyrexobf.onrender.com/" target="_blank" class="bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 px-4 py-2 rounded-xl text-xs font-semibold hover:bg-indigo-600/30 transition flex items-center gap-2">
+                    <i data-lucide="lock" class="w-4 h-4"></i> Usar Ofuscador Qyrex (100% Recomendado)
+                </a>
+            </div>
+            
+            <form id="upload-form" class="space-y-4">
+                <div>
+                    <label class="block text-xs uppercase text-slate-400 font-semibold mb-2">Nombre del Script</label>
+                    <input type="text" id="script-name" required placeholder="Ej. Hub de Combate V1" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition">
+                </div>
+                <div>
+                    <label class="block text-xs uppercase text-slate-400 font-semibold mb-2">Pon tu script aqui (Pega el código limpio u ofuscado)</label>
+                    <textarea id="script-code" required rows="5" placeholder="print('Hello Roblox Studio');" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none transition"></textarea>
+                </div>
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition shadow-lg shadow-blue-600/20">
+                    Registrar en el Sistema
+                </button>
+            </form>
+        </div>
+
+    </main>
+
+    <!-- Script de lógica Frontend -->
+    <script>
+        lucide.createIcons();
+
+        const API_URL = 'http://localhost:3000'; // Cambia esto por tu URL de Render o Railway cuando lo subas
+
+        async function fetchDashboardData() {
+            try {
+                const res = await fetch(`${API_URL}/api/stats`);
+                const data = await res.json();
+                document.getElementById('stat-visits').innerText = data.visitas;
+                document.getElementById('stat-scripts').innerText = data.activeScripts;
+            } catch (e) {
+                console.error("Error conectando al backend", e);
+            }
+        }
+
+        // Manejar envío del formulario de scripts
+        document.getElementById('upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('script-name').value;
+            const code = document.getElementById('script-code').value;
+
+            try {
+                const res = await fetch(`${API_URL}/api/upload`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, code })
+                });
+                const result = await res.json();
+                if(result.success) {
+                    alert('¡Script subido con éxito!');
+                    document.getElementById('upload-form').reset();
+                    fetchDashboardData();
+                }
+            } catch (err) {
+                alert('Hubo un error al conectar con el servidor.');
+            }
+        });
+
+        // Inicializar Gráfica de Tráfico con Chart.js
+        const ctx = document.getElementById('trafficChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'],
+                datasets: [{
+                    label: 'Visitas al API',
+                    data: [120, 190, 300, 250, 420, 600, 750],
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' } }
+                }
+            }
+        });
+
+        fetchDashboardData();
+    </script>
+</body>
+</html>
