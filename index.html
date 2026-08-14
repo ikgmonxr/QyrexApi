@@ -15,7 +15,6 @@
 </head>
 <body class="min-h-screen">
 
-  <!-- DASHBOARD -->
   <div id="dashboard">
     <nav class="border-b border-[#2d2d3a] bg-[#12121a] px-6 py-4 flex justify-between items-center">
       <div class="flex items-center gap-3">
@@ -26,7 +25,6 @@
     </nav>
 
     <div class="flex">
-      <!-- Sidebar -->
       <aside class="w-64 border-r border-[#2d2d3a] min-h-[calc(100vh-73px)] p-4 space-y-1">
         <button onclick="showTab('scripts')" class="tab-btn w-full text-left px-4 py-3 rounded-xl hover:bg-[#1a1a24] transition">📜 Scripts</button>
         <button onclick="showTab('upload')" class="tab-btn w-full text-left px-4 py-3 rounded-xl hover:bg-[#1a1a24] transition">⬆️ Subir Script</button>
@@ -34,16 +32,13 @@
         <button onclick="showTab('stats')" class="tab-btn w-full text-left px-4 py-3 rounded-xl hover:bg-[#1a1a24] transition">📊 Visitas & Stats</button>
       </aside>
 
-      <!-- Content -->
       <main class="flex-1 p-8">
         
-        <!-- SCRIPTS -->
         <div id="tab-scripts" class="tab-content">
           <h2 class="text-2xl font-bold mb-6">Mis Scripts</h2>
           <div id="scriptsList" class="grid gap-4"></div>
         </div>
 
-        <!-- UPLOAD -->
         <div id="tab-upload" class="tab-content hidden">
           <h2 class="text-2xl font-bold mb-6">Subir / Editar Script</h2>
           
@@ -63,17 +58,15 @@
           </div>
         </div>
 
-        <!-- KEYS -->
         <div id="tab-keys" class="tab-content hidden">
           <div class="flex justify-between items-center mb-6">
             <h2 class="text-2xl font-bold">Sistema de Keys</h2>
             <button onclick="generateKey()" class="btn bg-green-600 hover:bg-green-500 px-5 py-2 rounded-xl">+ Generar Key</button>
           </div>
-          <p class="text-gray-400 mb-4 text-sm">Estas keys se pueden vender con <b>Work.ink</b> o <b>Lootbits</b>. El usuario pone la key en el ejecutor.</p>
+          <p class="text-gray-400 mb-4 text-sm">Estas keys se pueden vender con <b>Work.ink</b> o <b>Lootbits</b>.</p>
           <div id="keysList" class="space-y-3"></div>
         </div>
 
-        <!-- STATS -->
         <div id="tab-stats" class="tab-content hidden">
           <h2 class="text-2xl font-bold mb-6">Visitas & Estadísticas</h2>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -102,20 +95,16 @@
   <script>
     let editingId = null;
 
-    // ============ TABS ============
     function showTab(name) {
       document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
       document.getElementById('tab-' + name).classList.remove('hidden');
-      
       if (name === 'scripts') loadScripts();
       if (name === 'keys') loadKeys();
       if (name === 'stats') loadStats();
     }
 
-    // Cargar todo al inicio
     loadScripts();
 
-    // ============ SCRIPTS ============
     async function loadScripts() {
       try {
         const res = await fetch('/api/admin/scripts');
@@ -142,7 +131,6 @@
           </div>
         `).join('');
       } catch (err) {
-        console.error(err);
         document.getElementById('scriptsList').innerHTML = '<p class="text-red-400">Error cargando scripts</p>';
       }
     }
@@ -191,7 +179,6 @@
       loadScripts();
     }
 
-    // ============ KEYS ============
     async function loadKeys() {
       try {
         const res = await fetch('/api/admin/keys');
@@ -233,7 +220,6 @@
       loadKeys();
     }
 
-    // ============ STATS ============
     async function loadStats() {
       try {
         const res = await fetch('/api/admin/stats');
