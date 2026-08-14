@@ -14,7 +14,7 @@ const DATA_FILE = path.join(__dirname, 'data.json');
 // ====================== MIDDLEWARE ======================
 app.use(cors());
 
-// Aumentamos el límite de JSON y URL Encoded a 50mb para soportar scripts gigantes
+// Límites de tamaño ampliados para soportar scripts ofuscados gigantes
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -51,7 +51,7 @@ function isBrowser(req) {
 }
 
 app.get('/api/script/:id', (req, res) => {
-  // Bloquear navegadores
+  // Nota: Si algún ejecutor causa problemas por el User-Agent, puedes comentar este bloque temporalmente
   if (isBrowser(req)) {
     return res.status(403).json({
       error: "Endpoint bloqueado",
