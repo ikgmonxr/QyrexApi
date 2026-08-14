@@ -1,75 +1,198 @@
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+// ====================== CONFIG ======================
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "qyrexadmin2026"; // Cambia esto
+const DATA_FILE = path.join(__dirname, 'data.json');
+
+// ====================== MIDDLEWARE ======================
 app.use(cors());
+app.use(express.json({ limit: '2mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Simulación de Base de Datos en Memoria (puedes cambiarla por MongoDB o SQL)
-let db = {
-    visitas: 1420,
-    scripts: [
-        { id: 1, name: "Aimbot Pro V4", version: "1.2", code: "print('Loaded Aimbot')" },
-        { id: 2, name: "ESP Box + Distance", version: "2.0", code: "print('Loaded ESP')" }
-    ]
-};
-
-// 1. ENDPOINT PRINCIPAL / API WEB (Bloquea navegadores comunes y muestra el mensaje estricto)
-app.get('/api/v1/endpoint', (req, res) => {
-    const userAgent = req.headers['user-agent'] || '';
-    
-    // Si el usuario entra directamente desde Chrome, Edge, Firefox, etc.
-    if (userAgent.includes('Mozilla') || userAgent.includes('Chrome') || userAgent.includes('Safari')) {
-        return res.status(403.4).send(`
-            <html>
-                <head><title>403 Forbidden</title></head>
-                <body style="background-color: #050505; color: #ff3333; font-family: monospace; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0;">
-                    <div style="text-align: center;">
-                        <h1 style="font-size: 3rem; margin: 0;">ACCESS DENIED</h1>
-                        <p style="color: #888; font-size: 1.1rem; margin-top: 10px;">Endpoint bloqueado. Este recurso es exclusivo para ejecución de scripts de Roblox.</p>
-                    </div>
-                </body>
-            </html>
-        `);
-    }
-
-    // Si la petición viene de Roblox (HttpService) o un Executor autorizado
-    res.json({
-        status: "success",
-        message: "Conexión autorizada con éxito.",
-        data: db.scripts
-    });
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200
 });
+app.use('/api/', limiter);
 
-// 2. ENDPOINT PARA OBTENER ESTADÍSTICAS EN EL DASHBOARD
-app.get('/api/stats', (req, res) => {
-    db.visitas++; // Incrementa visita simulada
-    res.json({
-        visitas: db.visitas,
-        activeScripts: db.scripts.length,
-        status: "Online"
-    });
-});
-
-// 3. ENDPOINT PARA SUBIR / GUARDAR SCRIPTS
-app.post('/api/upload', (req, res) => {
-    const { name, code } = req.body;
-    if (!name || !code) {
-        return res.status(400).json({ error: "Faltan datos obligatorios." });
-    }
-    
-    const newScript = {
-        id: db.scripts.length + 1,
-        name: name,
-        version: "1.0",
-        code: code
+// ====================== DATA ======================
+function loadData() {
+  if (!fs.existsSync(DATA_FILE)) {
+    const initial = {
+      scripts: [
+        {
+          id: "1",
+          name: "Example Script",
+          description: "Script de ejemplo",
+          code: "-- Pega tu script ofuscado aquí",
+          visits: 0,
+          createdAt: new Date().toISOString()
+        }
+      ],
+      keys: [],
+      visits: [],
+      totalVisits: 0
     };
-    
-    db.scripts.push(newScript);
-    res.json({ success: true, message: "Script registrado correctamente.", script: newScript });
+    fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
+  }
+  return JSON.parse(fs.readFileSync(DATA_FILE));
+}
+
+function saveData(data) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+}
+
+// ====================== SECURITY ======================
+function isBrowser(req) {
+  const ua = (req.headers['user-agent'] || '').toLowerCase();
+  return ua.includes('mozilla') || ua.includes('chrome') || ua.includes('safari') || ua.includes('firefox');
+}
+
+// ====================== API (protegida) ======================
+app.get('/api/script/:id', (req, res) => {
+  // Bloquear acceso desde navegador
+  if (isBrowser(req)) {
+    return res.status(403).json({
+      error: "Endpoint bloqueado",
+      message: "Este endpoint solo puede ser usado por ejecutores autorizados."
+    });
+  }
+
+  const data = loadData();
+  const script = data.scripts.find(s => s.id === req.params.id);
+  if (!script) return res.status(404).json({ error: "Script no encontrado" });
+
+  // Verificar key
+  const key = req.headers['x-api-key'] || req.query.key;
+  if (!key || !data.keys.find(k => k.key === key && k.active)) {
+    return res.status(401).json({ error: "API Key inválida o expirada" });
+  }
+
+  // Contar visita
+  script.visits = (script.visits || 0) + 1;
+  data.totalVisits = (data.totalVisits || 0) + 1;
+  data.visits.push({
+    scriptId: script.id,
+    time: new Date().toISOString(),
+    key: key.slice(0, 8) + "..."
+  });
+  if (data.visits.length > 500) data.visits = data.visits.slice(-500);
+  saveData(data);
+
+  res.set('Content-Type', 'text/plain');
+  res.send(script.code);
+});
+
+// ====================== DASHBOARD AUTH ======================
+function checkAdmin(req, res, next) {
+  const token = req.headers['x-admin-token'];
+  if (token !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: "No autorizado" });
+  }
+  next();
+}
+
+// ====================== DASHBOARD ROUTES ======================
+app.post('/api/admin/login', (req, res) => {
+  if (req.body.password === ADMIN_PASSWORD) {
+    return res.json({ success: true, token: ADMIN_PASSWORD });
+  }
+  res.status(401).json({ error: "Contraseña incorrecta" });
+});
+
+app.get('/api/admin/scripts', checkAdmin, (req, res) => {
+  const data = loadData();
+  res.json(data.scripts);
+});
+
+app.post('/api/admin/scripts', checkAdmin, (req, res) => {
+  const data = loadData();
+  const id = crypto.randomBytes(4).toString('hex');
+  const newScript = {
+    id,
+    name: req.body.name || "Nuevo Script",
+    description: req.body.description || "",
+    code: req.body.code || "",
+    visits: 0,
+    createdAt: new Date().toISOString()
+  };
+  data.scripts.push(newScript);
+  saveData(data);
+  res.json(newScript);
+});
+
+app.put('/api/admin/scripts/:id', checkAdmin, (req, res) => {
+  const data = loadData();
+  const script = data.scripts.find(s => s.id === req.params.id);
+  if (!script) return res.status(404).json({ error: "No encontrado" });
+
+  script.name = req.body.name ?? script.name;
+  script.description = req.body.description ?? script.description;
+  script.code = req.body.code ?? script.code;
+  saveData(data);
+  res.json(script);
+});
+
+app.delete('/api/admin/scripts/:id', checkAdmin, (req, res) => {
+  const data = loadData();
+  data.scripts = data.scripts.filter(s => s.id !== req.params.id);
+  saveData(data);
+  res.json({ success: true });
+});
+
+// Keys
+app.get('/api/admin/keys', checkAdmin, (req, res) => {
+  const data = loadData();
+  res.json(data.keys);
+});
+
+app.post('/api/admin/keys', checkAdmin, (req, res) => {
+  const data = loadData();
+  const key = "QYREX-" + crypto.randomBytes(8).toString('hex').toUpperCase();
+  const newKey = {
+    key,
+    active: true,
+    createdAt: new Date().toISOString(),
+    note: req.body.note || "Generada desde dashboard",
+    usedBy: []
+  };
+  data.keys.push(newKey);
+  saveData(data);
+  res.json(newKey);
+});
+
+app.delete('/api/admin/keys/:key', checkAdmin, (req, res) => {
+  const data = loadData();
+  data.keys = data.keys.filter(k => k.key !== req.params.key);
+  saveData(data);
+  res.json({ success: true });
+});
+
+// Stats
+app.get('/api/admin/stats', checkAdmin, (req, res) => {
+  const data = loadData();
+  res.json({
+    totalScripts: data.scripts.length,
+    totalKeys: data.keys.length,
+    activeKeys: data.keys.filter(k => k.active).length,
+    totalVisits: data.totalVisits || 0,
+    recentVisits: data.visits.slice(-30).reverse()
+  });
+});
+
+// ====================== FRONTEND ======================
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {
-    console.log(`Servidor corriendo en puerto ${PORT}`);
+  console.log(`QYREX API corriendo en puerto ${PORT}`);
 });
