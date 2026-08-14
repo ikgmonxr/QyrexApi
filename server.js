@@ -13,7 +13,11 @@ const DATA_FILE = path.join(__dirname, 'data.json');
 
 // ====================== MIDDLEWARE ======================
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+
+// Aumentamos el límite de JSON y URL Encoded a 50mb para soportar scripts gigantes
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 const limiter = rateLimit({
@@ -47,11 +51,11 @@ function isBrowser(req) {
 }
 
 app.get('/api/script/:id', (req, res) => {
-  // Permitir solo navegadores (por IP / navegador)
-  if (!isBrowser(req)) {
+  // Bloquear navegadores
+  if (isBrowser(req)) {
     return res.status(403).json({
       error: "Endpoint bloqueado",
-      message: "Este endpoint solo puede ser usado desde un navegador. QyrexApi"
+      message: "Este endpoint solo puede ser usado por ejecutores autorizados. QyrexApi"
     });
   }
 
