@@ -34,11 +34,13 @@
 
       <main class="flex-1 p-8">
         
+        <!-- SCRIPTS -->
         <div id="tab-scripts" class="tab-content">
           <h2 class="text-2xl font-bold mb-6">Mis Scripts</h2>
           <div id="scriptsList" class="grid gap-4"></div>
         </div>
 
+        <!-- UPLOAD -->
         <div id="tab-upload" class="tab-content hidden">
           <h2 class="text-2xl font-bold mb-6">Subir / Editar Script</h2>
           
@@ -58,6 +60,7 @@
           </div>
         </div>
 
+        <!-- KEYS -->
         <div id="tab-keys" class="tab-content hidden">
           <div class="flex justify-between items-center mb-6">
             <h2 class="text-2xl font-bold">Sistema de Keys</h2>
@@ -67,6 +70,7 @@
           <div id="keysList" class="space-y-3"></div>
         </div>
 
+        <!-- STATS -->
         <div id="tab-stats" class="tab-content hidden">
           <h2 class="text-2xl font-bold mb-6">Visitas & Estadísticas</h2>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -116,17 +120,27 @@
           return;
         }
 
+        const baseUrl = window.location.origin;
+
         container.innerHTML = scripts.map(s => `
-          <div class="card p-5 rounded-2xl flex justify-between items-start">
-            <div>
-              <h3 class="font-bold text-lg">${s.name}</h3>
-              <p class="text-gray-400 text-sm">${s.description || 'Sin descripción'}</p>
-              <p class="text-xs text-purple-400 mt-2">ID: ${s.id} • Visitas: ${s.visits || 0}</p>
-              <p class="text-xs text-gray-500 mt-1">Endpoint: /api/script/${s.id}</p>
+          <div class="card p-5 rounded-2xl">
+            <div class="flex justify-between items-start mb-3">
+              <div>
+                <h3 class="font-bold text-lg">${s.name}</h3>
+                <p class="text-gray-400 text-sm">${s.description || 'Sin descripción'}</p>
+                <p class="text-xs text-purple-400 mt-1">ID: ${s.id} • Visitas: ${s.visits || 0}</p>
+              </div>
+              <div class="flex gap-2">
+                <button onclick="editScript('${s.id}')" class="text-sm bg-[#2d2d3a] px-3 py-1.5 rounded-lg hover:bg-[#3a3a4a]">Editar</button>
+                <button onclick="deleteScript('${s.id}')" class="text-sm bg-red-900/40 text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-900/60">Eliminar</button>
+              </div>
             </div>
-            <div class="flex gap-2">
-              <button onclick="editScript('${s.id}')" class="text-sm bg-[#2d2d3a] px-3 py-1.5 rounded-lg hover:bg-[#3a3a4a]">Editar</button>
-              <button onclick="deleteScript('${s.id}')" class="text-sm bg-red-900/40 text-red-300 px-3 py-1.5 rounded-lg hover:bg-red-900/60">Eliminar</button>
+
+            <div class="bg-[#12121a] rounded-xl p-3 mt-3">
+              <p class="text-xs text-gray-400 mb-1">Loadstring (copia y pega):</p>
+              <code class="text-green-400 text-xs break-all select-all">
+loadstring(game:HttpGet("${baseUrl}/api/script/${s.id}?key=TU_KEY_AQUI"))()
+              </code>
             </div>
           </div>
         `).join('');
