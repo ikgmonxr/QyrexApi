@@ -47,11 +47,11 @@ function isBrowser(req) {
 }
 
 app.get('/api/script/:id', (req, res) => {
-  // Bloquear navegadores
-  if (isBrowser(req)) {
+  // Permitir solo navegadores (por IP / navegador)
+  if (!isBrowser(req)) {
     return res.status(403).json({
       error: "Endpoint bloqueado",
-      message: "Este endpoint solo puede ser usado por ejecutores autorizados. QyrexApi"
+      message: "Este endpoint solo puede ser usado desde un navegador. QyrexApi"
     });
   }
 
