@@ -3,76 +3,89 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QyrexApi | Autenticación</title>
-    <!-- Google Identity Services -->
+    <title>Qyrex - Autenticación</title>
+    <!-- Script oficial de Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        body { background-color: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        .card { background: #1e293b; padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); text-align: center; width: 100%; max-width: 400px; border: 1px solid #334155; }
-        h2 { margin-bottom: 8px; color: #ffffff; font-size: 24px; }
-        p { color: #94a3b8; font-size: 14px; margin-bottom: 24px; }
-        .google-btn-container { display: flex; justify-content: center; margin-top: 10px; }
-        #user-info { display: none; margin-top: 20px; }
-        #user-info img { width: 80px; height: 80px; border-radius: 50%; margin-bottom: 12px; border: 2px solid #3b82f6; }
-        .welcome-text { font-size: 16px; font-weight: 600; color: #e2e8f0; }
-        .email-text { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #0f172a;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .card {
+            background-color: #1e293b;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+        #mensaje {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #38bdf8;
+        }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <div id="login-section">
-            <h2>QyrexApi</h2>
-            <p>Inicia sesión o regístrate con Google</p>
-            
-            <!-- Botón de Google (Reemplaza TU_CLIENT_ID_DE_GOOGLE por el tuyo de Google Cloud Console) -->
-            <div class="google-btn-container">
-                <div id="g_id_onload"
-                     data-client_id="TU_CLIENT_ID_DE_GOOGLE.apps.googleusercontent.com"
-                     data-callback="manejarLogin"
-                     data-auto_prompt="false">
-                </div>
-                <div class="g_id_signin"
-                     data-type="standard"
-                     data-shape="pill"
-                     data-theme="filled_black"
-                     data-text="continue_with"
-                     data-size="large">
-                </div>
-            </div>
+        <h2>Iniciar sesión en Qyrex</h2>
+        <p>Inicia sesión con tu cuenta de Google para continuar</p>
+        
+        <!-- Contenedor del botón de Google -->
+        <div id="g_id_onload"
+             data-client_id="294416776289-bc3olhe9qhh1n1l0j2klrvus8a4amb2v.apps.googleusercontent.com"
+             data-callback="handleCredentialResponse"
+             data-auto_prompt="false">
         </div>
 
-        <div id="user-info">
-            <img id="user-avatar" src="" alt="Avatar">
-            <div class="welcome-text" id="user-name"></div>
-            <div class="email-text" id="user-email"></div>
+        <div class="g_id_signin"
+             data-type="standard"
+             data-shape="rectangular"
+             data-theme="outline"
+             data-text="sign_in_with"
+             data-size="large"
+             data-logo_alignment="left">
         </div>
+
+        <div id="mensaje"></div>
     </div>
 
     <script>
-        function manejarLogin(response) {
-            // Reemplaza https://tu-api-backend.vercel.app con la URL real que te dé Vercel al desplegar
-            fetch('https://tu-api-backend.vercel.app/api/auth', {
+        function handleCredentialResponse(response) {
+            const token = response.credential;
+            document.getElementById('mensaje').innerText = "Validando token con el servidor...";
+
+            // Aquí se conectará con tu endpoint en Vercel (/api/auth)
+            fetch('/api/auth', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token: response.credential })
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ token: token })
             })
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
-                    document.getElementById('login-section').style.display = 'none';
-                    const userInfo = document.getElementById('user-info');
-                    userInfo.style.display = 'block';
-
-                    document.getElementById('user-avatar').src = data.user.picture;
-                    document.getElementById('user-name').textContent = data.user.name;
-                    document.getElementById('user-email').textContent = data.user.email;
+                    document.getElementById('mensaje').style.color = "#4ade80";
+                    document.getElementById('mensaje').innerText = "¡Bienvenido, " + data.user.name + "!";
+                    // Aquí puedes redirigir al usuario o guardar su sesión
                 } else {
-                    alert('Error de autenticación: ' + data.error);
+                    document.getElementById('mensaje').style.color = "#f87171";
+                    document.getElementById('mensaje').innerText = "Error de autenticación: " + (data.message || "Desconocido");
                 }
             })
-            .catch(err => console.error('Error en la petición:', err));
+            .catch(err => {
+                console.error(err);
+                document.getElementById('mensaje').style.color = "#f87171";
+                document.getElementById('mensaje').innerText = "Error de conexión con el servidor.";
+            });
         }
     </script>
 </body>
