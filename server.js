@@ -5,6 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
+const path = require('path');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -12,6 +13,7 @@ app.set('trust proxy', 1);
 const JWT_SECRET = process.env.JWT_SECRET || 'cambia-este-secret-por-uno-largo';
 const MONGO_URI = process.env.MONGO_URI || '';
 const OBFUSCATOR_URL = process.env.OBFUSCATOR_URL || 'https://qyrexobf.onrender.com/api/obfuscate';
+const PORT = process.env.PORT || 3000;
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: true, credentials: true }));
@@ -19,7 +21,11 @@ app.use(express.json({ limit: '2mb' }));
 app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
 
 if (MONGO_URI) {
-  mongoose.connect(MONGO_URI).catch(err => console.error('Mongo error:', err.message));
+  mongoose.connect(MONGO_URI)
+    .then(() => console.log('Mongo OK'))
+    .catch(err => console.error('Mongo error:', err.message));
+} else {
+  console.warn('MONGO_URI no configurado');
 }
 
 const User = mongoose.models.QrexUser || mongoose.model('QrexUser', new mongoose.Schema({
@@ -58,7 +64,11 @@ function verifyPassword(password, stored) {
   const [salt, hash] = stored.split(':');
   if (!salt || !hash) return false;
   const test = crypto.scryptSync(password, salt, 64).toString('hex');
-  return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(test, 'hex'));
+  try {
+    return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(test, 'hex'));
+  } catch {
+    return false;
+  }
 }
 
 function signToken(user) {
@@ -97,8 +107,6 @@ async function obfuscateWithQyrex(code) {
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, service: 'QrexApi' });
 });
-
-// ========== AUTH: registro y login con usuario/contraseña ==========
 
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -169,13 +177,8 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/me', auth, async (req, res) => {
   const user = await User.findById(req.user.sub).lean();
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
-  res.json({
-    id: user._id,
-    username: user.username
-  });
+  res.json({ id: user._id, username: user.username });
 });
-
-// ========== SCRIPTS ==========
 
 app.get('/api/scripts', auth, async (req, res) => {
   const list = await Script.find({ ownerId: req.user.sub })
@@ -283,4 +286,12 @@ app.get('/api/executions', auth, async (req, res) => {
   res.json(logs);
 });
 
-module.exports = app;
+// Serve frontend
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.listen(PORT, () => {
+  console.log('QrexApi listening on port', PORT);
+});
