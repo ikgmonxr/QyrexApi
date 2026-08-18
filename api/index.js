@@ -5,17 +5,13 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
-const { OAuth2Client } = require('google-auth-library');
 
 const app = express();
 app.set('trust proxy', 1);
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
-const JWT_SECRET = process.env.JWT_SECRET || 'cambia-este-secret';
+const JWT_SECRET = process.env.JWT_SECRET || 'cambia-este-secret-por-uno-largo';
 const MONGO_URI = process.env.MONGO_URI || '';
 const OBFUSCATOR_URL = process.env.OBFUSCATOR_URL || 'https://qyrexobf.onrender.com/api/obfuscate';
-
-const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: true, credentials: true }));
@@ -27,10 +23,8 @@ if (MONGO_URI) {
 }
 
 const User = mongoose.models.QrexUser || mongoose.model('QrexUser', new mongoose.Schema({
-  googleId: { type: String, unique: true },
-  email: String,
-  name: String,
-  picture: String,
+  username: { type: String, unique: true, required: true, lowercase: true, trim: true },
+  passwordHash: { type: String, required: true },
   createdAt: { type: Date, default: Date.now }
 }));
 
@@ -54,11 +48,24 @@ const Execution = mongoose.models.QrexExecution || mongoose.model('QrexExecution
   createdAt: { type: Date, default: Date.now }
 }));
 
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return salt + ':' + hash;
+}
+
+function verifyPassword(password, stored) {
+  const [salt, hash] = stored.split(':');
+  if (!salt || !hash) return false;
+  const test = crypto.scryptSync(password, salt, 64).toString('hex');
+  return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(test, 'hex'));
+}
+
 function signToken(user) {
   return jwt.sign(
-    { sub: user._id.toString(), email: user.email, name: user.name },
+    { sub: user._id.toString(), username: user.username },
     JWT_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: '30d' }
   );
 }
 
@@ -91,47 +98,71 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, service: 'QrexApi' });
 });
 
-app.post('/api/auth/google', async (req, res) => {
+// ========== AUTH: registro y login con usuario/contraseña ==========
+
+app.post('/api/auth/register', async (req, res) => {
   try {
-    const { credential } = req.body || {};
-    if (!credential) return res.status(400).json({ error: 'Falta credential' });
-    if (!GOOGLE_CLIENT_ID) return res.status(500).json({ error: 'GOOGLE_CLIENT_ID no configurado' });
+    const { username, password } = req.body || {};
+    const user = (username || '').trim().toLowerCase();
+    const pass = password || '';
 
-    const ticket = await googleClient.verifyIdToken({
-      idToken: credential,
-      audience: GOOGLE_CLIENT_ID
-    });
-    const payload = ticket.getPayload();
-    if (!payload || !payload.sub) return res.status(401).json({ error: 'Google invalido' });
-
-    let user = await User.findOne({ googleId: payload.sub });
-    if (!user) {
-      user = await User.create({
-        googleId: payload.sub,
-        email: payload.email,
-        name: payload.name || payload.email,
-        picture: payload.picture || ''
-      });
-    } else {
-      user.name = payload.name || user.name;
-      user.picture = payload.picture || user.picture;
-      user.email = payload.email || user.email;
-      await user.save();
+    if (!user || user.length < 3) {
+      return res.status(400).json({ error: 'Usuario minimo 3 caracteres' });
+    }
+    if (!/^[a-z0-9_]+$/.test(user)) {
+      return res.status(400).json({ error: 'Solo letras, numeros y _' });
+    }
+    if (pass.length < 4) {
+      return res.status(400).json({ error: 'Contraseña minimo 4 caracteres' });
     }
 
-    const token = signToken(user);
+    const exists = await User.findOne({ username: user });
+    if (exists) {
+      return res.status(400).json({ error: 'Ese usuario ya existe' });
+    }
+
+    const doc = await User.create({
+      username: user,
+      passwordHash: hashPassword(pass)
+    });
+
+    const token = signToken(doc);
     res.json({
       token,
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        picture: user.picture
-      }
+      user: { id: doc._id, username: doc.username }
     });
   } catch (e) {
-    console.error('auth/google', e);
-    res.status(401).json({ error: 'Login fallido' });
+    console.error('register', e);
+    if (e.code === 11000) {
+      return res.status(400).json({ error: 'Ese usuario ya existe' });
+    }
+    res.status(500).json({ error: 'Error al registrar' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    const user = (username || '').trim().toLowerCase();
+    const pass = password || '';
+
+    if (!user || !pass) {
+      return res.status(400).json({ error: 'Falta usuario o contraseña' });
+    }
+
+    const doc = await User.findOne({ username: user });
+    if (!doc || !verifyPassword(pass, doc.passwordHash)) {
+      return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
+    }
+
+    const token = signToken(doc);
+    res.json({
+      token,
+      user: { id: doc._id, username: doc.username }
+    });
+  } catch (e) {
+    console.error('login', e);
+    res.status(500).json({ error: 'Error al iniciar sesion' });
   }
 });
 
@@ -140,11 +171,11 @@ app.get('/api/me', auth, async (req, res) => {
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
   res.json({
     id: user._id,
-    email: user.email,
-    name: user.name,
-    picture: user.picture
+    username: user.username
   });
 });
+
+// ========== SCRIPTS ==========
 
 app.get('/api/scripts', auth, async (req, res) => {
   const list = await Script.find({ ownerId: req.user.sub })
