@@ -11,9 +11,10 @@ const app = express();
 app.set('trust proxy', 1);
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
-const JWT_SECRET = process.env.JWT_SECRET || 'cambia-esto-ya';
+const JWT_SECRET = process.env.JWT_SECRET || 'cambia-este-secret';
 const MONGO_URI = process.env.MONGO_URI || '';
 const OBFUSCATOR_URL = process.env.OBFUSCATOR_URL || 'https://qyrexobf.onrender.com/api/obfuscate';
+
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -21,9 +22,9 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
 
-mongoose.connect(MONGO_URI)
-  .then(() => console.log('QrexApi DB OK'))
-  .catch(e => console.error('DB', e.message));
+if (MONGO_URI) {
+  mongoose.connect(MONGO_URI).catch(err => console.error('Mongo error:', err.message));
+}
 
 const User = mongoose.models.QrexUser || mongoose.model('QrexUser', new mongoose.Schema({
   googleId: { type: String, unique: true },
@@ -69,7 +70,7 @@ function auth(req, res, next) {
     req.user = jwt.verify(token, JWT_SECRET);
     next();
   } catch {
-    return res.status(401).json({ error: 'Token inválido' });
+    return res.status(401).json({ error: 'Token invalido' });
   }
 }
 
@@ -80,22 +81,28 @@ async function obfuscateWithQyrex(code) {
     body: JSON.stringify({ code })
   });
   const data = await r.json();
-  if (!data || !data.success || !data.code) throw new Error(data?.error || 'Obfuscator failed');
+  if (!data || !data.success || !data.code) {
+    throw new Error((data && data.error) || 'Obfuscator failed');
+  }
   return data.code;
 }
 
-// Google login
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, service: 'QrexApi' });
+});
+
 app.post('/api/auth/google', async (req, res) => {
   try {
     const { credential } = req.body || {};
     if (!credential) return res.status(400).json({ error: 'Falta credential' });
+    if (!GOOGLE_CLIENT_ID) return res.status(500).json({ error: 'GOOGLE_CLIENT_ID no configurado' });
 
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
       audience: GOOGLE_CLIENT_ID
     });
     const payload = ticket.getPayload();
-    if (!payload?.sub) return res.status(401).json({ error: 'Google inválido' });
+    if (!payload || !payload.sub) return res.status(401).json({ error: 'Google invalido' });
 
     let user = await User.findOne({ googleId: payload.sub });
     if (!user) {
@@ -108,16 +115,22 @@ app.post('/api/auth/google', async (req, res) => {
     } else {
       user.name = payload.name || user.name;
       user.picture = payload.picture || user.picture;
+      user.email = payload.email || user.email;
       await user.save();
     }
 
     const token = signToken(user);
     res.json({
       token,
-      user: { id: user._id, email: user.email, name: user.name, picture: user.picture }
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        picture: user.picture
+      }
     });
   } catch (e) {
-    console.error(e);
+    console.error('auth/google', e);
     res.status(401).json({ error: 'Login fallido' });
   }
 });
@@ -125,12 +138,18 @@ app.post('/api/auth/google', async (req, res) => {
 app.get('/api/me', auth, async (req, res) => {
   const user = await User.findById(req.user.sub).lean();
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
-  res.json({ id: user._id, email: user.email, name: user.name, picture: user.picture });
+  res.json({
+    id: user._id,
+    email: user.email,
+    name: user.name,
+    picture: user.picture
+  });
 });
 
-// Scripts
 app.get('/api/scripts', auth, async (req, res) => {
-  const list = await Script.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).select('-source -obfuscated');
+  const list = await Script.find({ ownerId: req.user.sub })
+    .sort({ createdAt: -1 })
+    .select('-source -obfuscated');
   res.json(list);
 });
 
@@ -154,10 +173,13 @@ app.post('/api/scripts', auth, async (req, res) => {
       obfuscated
     });
 
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+
     res.json({
       id: doc.id,
       name: doc.name,
-      loadstring: `loadstring(game:HttpGet("${req.protocol}://${req.get('host')}/api/raw/${doc.id}"))()`
+      loadstring: `loadstring(game:HttpGet("${proto}://${host}/api/raw/${doc.id}"))()`
     });
   } catch (e) {
     console.error(e);
@@ -189,11 +211,13 @@ app.delete('/api/scripts/:id', auth, async (req, res) => {
   res.json({ success: true });
 });
 
-// Public raw (Roblox)
 app.get('/api/raw/:id', async (req, res) => {
   const ua = (req.headers['user-agent'] || '').toLowerCase();
   const accept = (req.headers['accept'] || '').toLowerCase();
-  const isBrowser = accept.includes('text/html') && /mozilla|chrome|firefox|safari|edg/i.test(ua) && !/roblox|executor|synapse|fluxus|solara/i.test(ua);
+  const isBrowser =
+    accept.includes('text/html') &&
+    /mozilla|chrome|firefox|safari|edg/i.test(ua) &&
+    !/roblox|executor|synapse|fluxus|solara/i.test(ua);
 
   if (isBrowser) {
     return res.status(403).type('html').send('<!doctype html><title>403</title><h1>Forbidden</h1><p>Roblox only</p>');
@@ -204,6 +228,7 @@ app.get('/api/raw/:id', async (req, res) => {
 
   s.executions += 1;
   await s.save();
+
   await Execution.create({
     scriptId: s.id,
     scriptName: s.name,
@@ -216,7 +241,6 @@ app.get('/api/raw/:id', async (req, res) => {
   res.type('text/plain').send(s.obfuscated);
 });
 
-// Stats / executions
 app.get('/api/stats', auth, async (req, res) => {
   const scripts = await Script.find({ ownerId: req.user.sub });
   const totalExec = scripts.reduce((a, s) => a + (s.executions || 0), 0);
