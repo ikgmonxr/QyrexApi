@@ -20,13 +20,29 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
 
-if (MONGO_URI) {
-  mongoose.connect(MONGO_URI)
-    .then(() => console.log('Mongo OK'))
-    .catch(err => console.error('Mongo error:', err.message));
-} else {
-  console.warn('MONGO_URI no configurado');
+let mongoReady = false;
+
+async function connectMongo() {
+  if (!MONGO_URI) {
+    console.error('FATAL: MONGO_URI no esta configurado en Environment Variables');
+    return;
+  }
+  try {
+    await mongoose.connect(MONGO_URI, {
+      serverSelectionTimeoutMS: 10000
+    });
+    mongoReady = true;
+    console.log('Mongo OK');
+  } catch (err) {
+    mongoReady = false;
+    console.error('Mongo error:', err.message);
+  }
 }
+connectMongo();
+
+mongoose.connection.on('connected', () => { mongoReady = true; console.log('Mongo connected'); });
+mongoose.connection.on('disconnected', () => { mongoReady = false; console.log('Mongo disconnected'); });
+mongoose.connection.on('error', (e) => { mongoReady = false; console.error('Mongo conn error:', e.message); });
 
 const User = mongoose.models.QrexUser || mongoose.model('QrexUser', new mongoose.Schema({
   username: { type: String, unique: true, required: true, lowercase: true, trim: true },
@@ -61,10 +77,10 @@ function hashPassword(password) {
 }
 
 function verifyPassword(password, stored) {
-  const [salt, hash] = stored.split(':');
+  const [salt, hash] = (stored || '').split(':');
   if (!salt || !hash) return false;
-  const test = crypto.scryptSync(password, salt, 64).toString('hex');
   try {
+    const test = crypto.scryptSync(password, salt, 64).toString('hex');
     return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(test, 'hex'));
   } catch {
     return false;
@@ -91,6 +107,16 @@ function auth(req, res, next) {
   }
 }
 
+function needMongo(req, res, next) {
+  if (!MONGO_URI) {
+    return res.status(503).json({ error: 'MONGO_URI no configurado en Render Environment' });
+  }
+  if (!mongoReady && mongoose.connection.readyState !== 1) {
+    return res.status(503).json({ error: 'MongoDB no conectado. Revisa MONGO_URI y Network Access en Atlas (0.0.0.0/0)' });
+  }
+  next();
+}
+
 async function obfuscateWithQyrex(code) {
   const r = await fetch(OBFUSCATOR_URL, {
     method: 'POST',
@@ -105,10 +131,15 @@ async function obfuscateWithQyrex(code) {
 }
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, service: 'QrexApi' });
+  res.json({
+    ok: true,
+    service: 'QrexApi',
+    mongo: mongoReady || mongoose.connection.readyState === 1,
+    mongoState: mongoose.connection.readyState // 0=off 1=on 2=connecting 3=disconnecting
+  });
 });
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', needMongo, async (req, res) => {
   try {
     const { username, password } = req.body || {};
     const user = (username || '').trim().toLowerCase();
@@ -144,11 +175,11 @@ app.post('/api/auth/register', async (req, res) => {
     if (e.code === 11000) {
       return res.status(400).json({ error: 'Ese usuario ya existe' });
     }
-    res.status(500).json({ error: 'Error al registrar' });
+    res.status(500).json({ error: 'Error al registrar: ' + (e.message || 'desconocido') });
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', needMongo, async (req, res) => {
   try {
     const { username, password } = req.body || {};
     const user = (username || '').trim().toLowerCase();
@@ -170,30 +201,30 @@ app.post('/api/auth/login', async (req, res) => {
     });
   } catch (e) {
     console.error('login', e);
-    res.status(500).json({ error: 'Error al iniciar sesion' });
+    res.status(500).json({ error: 'Error al iniciar sesion: ' + (e.message || 'desconocido') });
   }
 });
 
-app.get('/api/me', auth, async (req, res) => {
+app.get('/api/me', auth, needMongo, async (req, res) => {
   const user = await User.findById(req.user.sub).lean();
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
   res.json({ id: user._id, username: user.username });
 });
 
-app.get('/api/scripts', auth, async (req, res) => {
+app.get('/api/scripts', auth, needMongo, async (req, res) => {
   const list = await Script.find({ ownerId: req.user.sub })
     .sort({ createdAt: -1 })
     .select('-source -obfuscated');
   res.json(list);
 });
 
-app.get('/api/scripts/:id', auth, async (req, res) => {
+app.get('/api/scripts/:id', auth, needMongo, async (req, res) => {
   const s = await Script.findOne({ id: req.params.id, ownerId: req.user.sub });
   if (!s) return res.status(404).json({ error: 'No encontrado' });
   res.json(s);
 });
 
-app.post('/api/scripts', auth, async (req, res) => {
+app.post('/api/scripts', auth, needMongo, async (req, res) => {
   try {
     const { name, description, source } = req.body || {};
     if (!name || !source) return res.status(400).json({ error: 'name y source requeridos' });
@@ -221,7 +252,7 @@ app.post('/api/scripts', auth, async (req, res) => {
   }
 });
 
-app.put('/api/scripts/:id', auth, async (req, res) => {
+app.put('/api/scripts/:id', auth, needMongo, async (req, res) => {
   try {
     const { name, description, source } = req.body || {};
     const s = await Script.findOne({ id: req.params.id, ownerId: req.user.sub });
@@ -240,7 +271,7 @@ app.put('/api/scripts/:id', auth, async (req, res) => {
   }
 });
 
-app.delete('/api/scripts/:id', auth, async (req, res) => {
+app.delete('/api/scripts/:id', auth, needMongo, async (req, res) => {
   await Script.deleteOne({ id: req.params.id, ownerId: req.user.sub });
   res.json({ success: true });
 });
@@ -255,6 +286,10 @@ app.get('/api/raw/:id', async (req, res) => {
 
   if (isBrowser) {
     return res.status(403).type('html').send('<!doctype html><title>403</title><h1>Forbidden</h1><p>Roblox only</p>');
+  }
+
+  if (!mongoReady && mongoose.connection.readyState !== 1) {
+    return res.status(503).type('text/plain').send('-- db offline');
   }
 
   const s = await Script.findOne({ id: req.params.id });
@@ -275,18 +310,17 @@ app.get('/api/raw/:id', async (req, res) => {
   res.type('text/plain').send(s.obfuscated);
 });
 
-app.get('/api/stats', auth, async (req, res) => {
+app.get('/api/stats', auth, needMongo, async (req, res) => {
   const scripts = await Script.find({ ownerId: req.user.sub });
   const totalExec = scripts.reduce((a, s) => a + (s.executions || 0), 0);
   res.json({ scripts: scripts.length, executions: totalExec });
 });
 
-app.get('/api/executions', auth, async (req, res) => {
+app.get('/api/executions', auth, needMongo, async (req, res) => {
   const logs = await Execution.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).limit(100);
   res.json(logs);
 });
 
-// Serve frontend
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -294,4 +328,5 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log('QrexApi listening on port', PORT);
+  console.log('MONGO_URI set:', !!MONGO_URI);
 });
