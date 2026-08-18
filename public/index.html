@@ -1,17 +1,79 @@
-<!-- Dentro de tu script de handleCredentialResponse -->
-<script>
-    function handleCredentialResponse(response) {
-        // CAMBIA ESTA URL POR LA DE TU SERVIDOR/VERCEL
-        fetch('https://tu-api-backend.vercel.app/api/auth', { 
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: response.credential })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                console.log("Logueado:", data.user);
-            }
-        });
-    }
-</script>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal de Autenticación</title>
+    <!-- SDK oficial de Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        .card { background: #1e293b; padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); text-align: center; width: 100%; max-width: 400px; border: 1px solid #334155; }
+        h2 { margin-bottom: 8px; color: #ffffff; }
+        p { color: #94a3b8; font-size: 14px; margin-bottom: 24px; }
+        .google-btn-container { display: flex; justify-content: center; margin-top: 10px; }
+        #user-info { display: none; margin-top: 20px; }
+        #user-info img { width: 80px; height: 80px; border-radius: 50%; margin-bottom: 12px; border: 2px solid #3b82f6; }
+        .welcome-text { font-size: 16px; font-weight: 600; color: #e2e8f0; }
+        .email-text { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <div id="login-section">
+            <h2>Bienvenido</h2>
+            <p>Inicia sesión con tu cuenta de Google</p>
+            
+            <!-- Botón de Google -->
+            <div class="google-btn-container">
+                <div id="g_id_onload"
+                     data-client_id="TU_CLIENT_ID_DE_GOOGLE.apps.googleusercontent.com"
+                     data-callback="manejarLogin"
+                     data-auto_prompt="false">
+                </div>
+                <div class="g_id_signin"
+                     data-type="standard"
+                     data-shape="pill"
+                     data-theme="filled_black"
+                     data-text="continue_with"
+                     data-size="large">
+                </div>
+            </div>
+        </div>
+
+        <div id="user-info">
+            <img id="user-avatar" src="" alt="Avatar">
+            <div class="welcome-text" id="user-name"></div>
+            <div class="email-text" id="user-email"></div>
+        </div>
+    </div>
+
+    <script>
+        function manejarLogin(response) {
+            // Envía el token de Google por JavaScript (Fetch API) a tu backend seguro en Vercel
+            fetch('https://tu-api-backend.vercel.app/api/auth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: response.credential })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('login-section').style.display = 'none';
+                    const userInfo = document.getElementById('user-info');
+                    userInfo.style.display = 'block';
+
+                    document.getElementById('user-avatar').src = data.user.picture;
+                    document.getElementById('user-name').textContent = data.user.name;
+                    document.getElementById('user-email').textContent = data.user.email;
+                } else {
+                    alert('Error de autenticación: ' + data.error);
+                }
+            })
+            .catch(err => console.error('Error en la petición:', err));
+        }
+    </script>
+</body>
+</html>
