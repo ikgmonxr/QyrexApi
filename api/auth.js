@@ -2,36 +2,64 @@ const { OAuth2Client } = require('google-auth-library');
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 module.exports = async (req, res) => {
-    // Configurar CORS autorizado específicamente para tu GitHub Pages
-    res.setHeader('Access-Control-Allow-Origin', 'https://ikgmonxr.github.io');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    // Configurar cabeceras CORS por si tu frontend está en otro dominio (como GitHub Pages)
+    res.setHeader('Access-Control-Allow-Credentials', true);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+    res.setHeader(
+        'Access-Control-Allow-Headers',
+        'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+    );
 
     if (req.method === 'OPTIONS') {
-        return res.status(200).end();
+        res.status(200).end();
+        return;
     }
 
-    if (req.method === 'POST') {
+    if (req.method !== 'POST') {
+        return res.status(405).json({ success: false, message: 'Método no permitido' });
+    }
+
+    try {
         const { token } = req.body;
-        try {
-            const ticket = await client.verifyIdToken({
-                idToken: token,
-                audience: process.env.GOOGLE_CLIENT_ID,
-            });
-            const payload = ticket.getPayload();
-            
-            return res.status(200).json({ 
-                success: true, 
-                user: { 
-                    name: payload.name, 
-                    email: payload.email, 
-                    picture: payload.picture 
-                } 
-            });
-        } catch (error) {
-            return res.status(401).json({ success: false, error: "Token de Google inválido" });
-        }
-    }
 
-    return res.status(405).json({ error: "Método no permitido" });
+        if (!token) {
+            return res.status(400).json({ success: false, message: 'Token no proporcionado' });
+        }
+
+        // Verificar el token con la librería oficial de Google
+        const ticket = await client.verifyIdToken({
+            idToken: token,
+            audience: process.env.GOOGLE_CLIENT_ID,
+        });
+
+        const payload = ticket.getPayload();
+        
+        // Datos extraídos del usuario autenticado
+        const userid = payload['sub'];
+        const email = payload['email'];
+        const name = payload['name'];
+        const picture = payload['picture'];
+
+        // Aquí puedes registrar el usuario en tu base de datos si lo deseas
+
+        return res.status(200).json({
+            success: true,
+            message: 'Autenticación exitosa',
+            user: {
+                id: userid,
+                email: email,
+                name: name,
+                picture: picture
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al verificar el token:', error);
+        return res.status(401).json({
+            success: false,
+            message: 'Token inválido o expirado',
+            error: error.message
+        });
+    }
 };
