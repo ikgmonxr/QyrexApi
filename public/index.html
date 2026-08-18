@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal de Autenticación</title>
-    <!-- SDK oficial de Google Identity Services -->
+    <title>QyrexApi | Autenticación</title>
+    <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background-color: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; }
         .card { background: #1e293b; padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); text-align: center; width: 100%; max-width: 400px; border: 1px solid #334155; }
-        h2 { margin-bottom: 8px; color: #ffffff; }
+        h2 { margin-bottom: 8px; color: #ffffff; font-size: 24px; }
         p { color: #94a3b8; font-size: 14px; margin-bottom: 24px; }
         .google-btn-container { display: flex; justify-content: center; margin-top: 10px; }
         #user-info { display: none; margin-top: 20px; }
@@ -23,10 +23,10 @@
 
     <div class="card">
         <div id="login-section">
-            <h2>Bienvenido</h2>
-            <p>Inicia sesión con tu cuenta de Google</p>
+            <h2>QyrexApi</h2>
+            <p>Inicia sesión o regístrate con Google</p>
             
-            <!-- Botón de Google -->
+            <!-- Botón de Google (Reemplaza TU_CLIENT_ID_DE_GOOGLE por el tuyo de Google Cloud Console) -->
             <div class="google-btn-container">
                 <div id="g_id_onload"
                      data-client_id="TU_CLIENT_ID_DE_GOOGLE.apps.googleusercontent.com"
@@ -52,7 +52,7 @@
 
     <script>
         function manejarLogin(response) {
-            // Envía el token de Google por JavaScript (Fetch API) a tu backend seguro en Vercel
+            // Reemplaza https://tu-api-backend.vercel.app con la URL real que te dé Vercel al desplegar
             fetch('https://tu-api-backend.vercel.app/api/auth', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
