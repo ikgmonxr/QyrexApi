@@ -285,7 +285,47 @@ app.get('/api/raw/:id', async (req, res) => {
     !/roblox|executor|synapse|fluxus|solara/i.test(ua);
 
   if (isBrowser) {
-    return res.status(403).type('html').send('<!doctype html><title>403</title><h1>Forbidden</h1><p>Roblox only</p>');
+    return res.status(403).type('html').send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Access Denied — QrexApi</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a0f;font-family:Inter,system-ui,sans-serif;color:#e4e4ed;overflow:hidden}
+  body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 50% 30%,rgba(124,58,237,.12),transparent 60%);pointer-events:none}
+  .card{position:relative;background:#111118;border:1px solid #1e1e2a;border-radius:20px;padding:40px 44px;max-width:520px;width:90%;box-shadow:0 25px 80px rgba(0,0,0,.5);animation:rise .6s cubic-bezier(.22,1,.36,1) both}
+  @keyframes rise{from{opacity:0;transform:translateY(24px) scale(.97)}to{opacity:1;transform:none}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+  .badge{display:inline-flex;align-items:center;gap:6px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#f87171;font-size:11px;font-weight:600;letter-spacing:.04em;padding:5px 12px;border-radius:999px;margin-bottom:20px;animation:pulse 2s ease infinite}
+  .badge::before{content:'';width:6px;height:6px;border-radius:50%;background:#f87171}
+  h1{font-size:22px;font-weight:700;line-height:1.35;margin-bottom:12px}
+  p{font-size:14px;color:#8b8b9e;line-height:1.6;margin-bottom:8px}
+  .actions{display:flex;gap:10px;margin-top:28px;flex-wrap:wrap}
+  a{text-decoration:none;font-size:13px;font-weight:600;padding:11px 18px;border-radius:10px;transition:all .2s}
+  .btn-main{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff}
+  .btn-main:hover{opacity:.9;transform:translateY(-1px)}
+  .btn-ghost{background:transparent;border:1px solid #2a2a3a;color:#a0a0b0}
+  .btn-ghost:hover{border-color:#7c3aed;color:#c4b5fd}
+  .logo{width:36px;height:36px;border-radius:10px;margin-bottom:20px;object-fit:cover}
+</style>
+</head>
+<body>
+  <div class="card">
+    <img class="logo" src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="Qrex"/>
+    <div class="badge">ACCESS DENIED</div>
+    <h1>This lua script is protected by QrexApi</h1>
+    <p>You don't have permission to access these files.</p>
+    <p>This script has been protected against unauthorized access, reverse engineering, and tampering.</p>
+    <div class="actions">
+      <a class="btn-main" href="/">Return Home</a>
+      <a class="btn-ghost" href="/">Contact QrexApi</a>
+    </div>
+  </div>
+</body>
+</html>`);
   }
 
   if (!mongoReady && mongoose.connection.readyState !== 1) {
