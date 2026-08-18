@@ -1,92 +1,184 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Qyrex - Autenticación</title>
-    <!-- Script oficial de Google Identity Services -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #0f172a;
-            color: #ffffff;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .card {
-            background-color: #1e293b;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-            text-align: center;
-        }
-        #mensaje {
-            margin-top: 20px;
-            font-size: 14px;
-            color: #38bdf8;
-        }
-    </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>QrexApi</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body{font-family:Inter,system-ui,sans-serif;background:#0b0b12;color:#e8e8f0}
+  .side{background:#12121c;border-right:1px solid #1f1f2e}
+  .card{background:#141422;border:1px solid #222235}
+  .nav-item{color:#9a9ab0}.nav-item:hover,.nav-item.active{background:#1c1c2e;color:#c4b5fd}
+  textarea,input,select{background:#0e0e18;border:1px solid #2a2a3d;color:#e8e8f0}
+</style>
 </head>
-<body>
+<body class="min-h-screen">
+<!-- LOGIN -->
+<div id="loginView" class="min-h-screen flex items-center justify-center p-6">
+  <div class="card rounded-2xl p-10 w-full max-w-md text-center">
+    <div class="text-3xl font-bold mb-2">QrexApi</div>
+    <p class="text-sm text-zinc-400 mb-8">Scripts · Ofuscación · Dashboard</p>
+    <div id="gbtn" class="flex justify-center"></div>
+    <p id="loginErr" class="text-red-400 text-sm mt-4 hidden"></p>
+  </div>
+</div>
 
-    <div class="card">
-        <h2>Iniciar sesión en Qyrex</h2>
-        <p>Inicia sesión con tu cuenta de Google para continuar</p>
-        
-        <!-- Contenedor del botón de Google -->
-        <div id="g_id_onload"
-             data-client_id="294416776289-bc3olhe9qhh1n1l0j2klrvus8a4amb2v.apps.googleusercontent.com"
-             data-callback="handleCredentialResponse"
-             data-auto_prompt="false">
+<!-- APP -->
+<div id="appView" class="hidden min-h-screen flex">
+  <aside class="side w-64 p-5 flex flex-col fixed h-full">
+    <div class="font-bold text-lg mb-8 px-2">⚡ QrexApi</div>
+    <nav class="flex flex-col gap-1 flex-1 text-sm">
+      <button class="nav-item active text-left px-3 py-2.5 rounded-lg" data-page="overview" onclick="go('overview')">Overview</button>
+      <button class="nav-item text-left px-3 py-2.5 rounded-lg" data-page="scripts" onclick="go('scripts')">Lua Scripts</button>
+      <button class="nav-item text-left px-3 py-2.5 rounded-lg" data-page="create" onclick="go('create')">Create Script</button>
+      <button class="nav-item text-left px-3 py-2.5 rounded-lg" data-page="executions" onclick="go('executions')">Executions</button>
+    </nav>
+    <div class="text-xs text-zinc-500 px-2 mb-2" id="userLabel"></div>
+    <button onclick="logout()" class="text-left text-red-400 text-sm px-3 py-2">Cerrar sesión</button>
+  </aside>
+
+  <main class="ml-64 flex-1 p-8">
+    <section id="page-overview" class="page">
+      <h1 class="text-2xl font-bold mb-6">Overview</h1>
+      <div class="grid grid-cols-2 gap-4 max-w-xl">
+        <div class="card rounded-xl p-5"><div class="text-zinc-400 text-sm">Scripts</div><div id="stScripts" class="text-3xl font-bold">0</div></div>
+        <div class="card rounded-xl p-5"><div class="text-zinc-400 text-sm">Ejecuciones</div><div id="stExec" class="text-3xl font-bold text-violet-400">0</div></div>
+      </div>
+    </section>
+
+    <section id="page-scripts" class="page hidden">
+      <div class="flex justify-between mb-6">
+        <h1 class="text-2xl font-bold">Lua Scripts</h1>
+        <button onclick="go('create')" class="bg-violet-600 hover:bg-violet-500 px-4 py-2 rounded-lg text-sm">+ Create</button>
+      </div>
+      <div id="scriptsList" class="grid gap-4"></div>
+    </section>
+
+    <section id="page-create" class="page hidden">
+      <h1 class="text-2xl font-bold mb-6">Create Script</h1>
+      <div class="card rounded-2xl p-6 max-w-3xl space-y-4">
+        <input id="sName" placeholder="Name *" class="w-full rounded-xl px-4 py-3 outline-none"/>
+        <input id="sDesc" placeholder="Description" class="w-full rounded-xl px-4 py-3 outline-none"/>
+        <div class="text-xs text-emerald-400 bg-emerald-950/40 border border-emerald-800/50 rounded-xl px-4 py-3">
+          This is your source. It gets obfuscated with QyrexObf before users receive it.
         </div>
+        <textarea id="sSource" placeholder="Paste your Lua source here..." class="w-full h-64 rounded-xl px-4 py-3 font-mono text-sm outline-none resize-none"></textarea>
+        <button id="createBtn" onclick="createScript()" class="bg-violet-600 hover:bg-violet-500 px-5 py-3 rounded-xl font-semibold">Create</button>
+        <textarea id="createOut" readonly class="w-full h-20 rounded-xl px-4 py-3 font-mono text-xs text-emerald-400 resize-none"></textarea>
+      </div>
+    </section>
 
-        <div class="g_id_signin"
-             data-type="standard"
-             data-shape="rectangular"
-             data-theme="outline"
-             data-text="sign_in_with"
-             data-size="large"
-             data-logo_alignment="left">
-        </div>
+    <section id="page-executions" class="page hidden">
+      <h1 class="text-2xl font-bold mb-6">Executions</h1>
+      <div class="card rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="text-zinc-500 text-left"><tr><th class="px-4 py-3">Fecha</th><th class="px-4 py-3">Script</th><th class="px-4 py-3">IP</th></tr></thead>
+          <tbody id="execTable"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
 
-        <div id="mensaje"></div>
-    </div>
+<script>
+const GOOGLE_CLIENT_ID = 'PEGA_AQUI_TU_GOOGLE_CLIENT_ID';
+let token = localStorage.getItem('qrex_token') || '';
 
-    <script>
-        function handleCredentialResponse(response) {
-            const token = response.credential;
-            document.getElementById('mensaje').innerText = "Validando token con el servidor...";
+function headers(){ return { 'Authorization': 'Bearer '+token, 'Content-Type': 'application/json' }; }
 
-            // Aquí se conectará con tu endpoint en Vercel (/api/auth)
-            fetch('/api/auth', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ token: token })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    document.getElementById('mensaje').style.color = "#4ade80";
-                    document.getElementById('mensaje').innerText = "¡Bienvenido, " + data.user.name + "!";
-                    // Aquí puedes redirigir al usuario o guardar su sesión
-                } else {
-                    document.getElementById('mensaje').style.color = "#f87171";
-                    document.getElementById('mensaje').innerText = "Error de autenticación: " + (data.message || "Desconocido");
-                }
-            })
-            .catch(err => {
-                console.error(err);
-                document.getElementById('mensaje').style.color = "#f87171";
-                document.getElementById('mensaje').innerText = "Error de conexión con el servidor.";
-            });
-        }
-    </script>
+function showApp(user){
+  document.getElementById('loginView').classList.add('hidden');
+  document.getElementById('appView').classList.remove('hidden');
+  document.getElementById('userLabel').textContent = user?.email || '';
+  loadStats(); loadScripts();
+}
+
+function logout(){ token=''; localStorage.removeItem('qrex_token'); location.reload(); }
+
+window.onload = function(){
+  if(token){
+    fetch('/api/me',{headers:headers()}).then(r=>r.ok?r.json():Promise.reject()).then(showApp).catch(logout);
+  }
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: async (resp) => {
+      try{
+        const r = await fetch('/api/auth/google',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:resp.credential})});
+        const d = await r.json();
+        if(!r.ok) throw new Error(d.error||'fail');
+        token = d.token; localStorage.setItem('qrex_token', token);
+        showApp(d.user);
+      }catch(e){
+        document.getElementById('loginErr').classList.remove('hidden');
+        document.getElementById('loginErr').textContent = e.message;
+      }
+    }
+  });
+  google.accounts.id.renderButton(document.getElementById('gbtn'),{theme:'outline',size:'large',shape:'pill'});
+};
+
+function go(p){
+  document.querySelectorAll('.page').forEach(x=>x.classList.add('hidden'));
+  document.getElementById('page-'+p).classList.remove('hidden');
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
+  document.querySelector('[data-page="'+p+'"]')?.classList.add('active');
+  if(p==='scripts') loadScripts();
+  if(p==='overview') loadStats();
+  if(p==='executions') loadExec();
+}
+
+async function loadStats(){
+  const r=await fetch('/api/stats',{headers:headers()}); const d=await r.json();
+  document.getElementById('stScripts').textContent=d.scripts||0;
+  document.getElementById('stExec').textContent=d.executions||0;
+}
+
+async function loadScripts(){
+  const r=await fetch('/api/scripts',{headers:headers()}); const list=await r.json();
+  const host=location.origin;
+  document.getElementById('scriptsList').innerHTML = list.map(s=>{
+    const ls=`loadstring(game:HttpGet("${host}/api/raw/${s.id}"))()`;
+    return `<div class="card rounded-xl p-5">
+      <div class="flex justify-between mb-2"><div><div class="font-semibold text-violet-300">${esc(s.name)}</div>
+      <div class="text-xs text-zinc-500">${s.executions||0} exec</div></div>
+      <button onclick="delScript('${s.id}')" class="text-xs text-red-400">Delete</button></div>
+      <textarea readonly class="w-full h-14 rounded-lg px-3 py-2 text-xs font-mono">${ls}</textarea>
+      <button onclick="navigator.clipboard.writeText(\`${ls}\`)" class="mt-2 w-full bg-violet-600 py-2 rounded-lg text-sm">Copy loadstring</button>
+    </div>`;
+  }).join('') || '<p class="text-zinc-500">No scripts yet</p>';
+}
+
+async function createScript(){
+  const name=document.getElementById('sName').value.trim();
+  const description=document.getElementById('sDesc').value.trim();
+  const source=document.getElementById('sSource').value;
+  if(!name||!source) return alert('Name y source requeridos');
+  const btn=document.getElementById('createBtn'); btn.disabled=true; btn.textContent='Ofuscando...';
+  try{
+    const r=await fetch('/api/scripts',{method:'POST',headers:headers(),body:JSON.stringify({name,description,source})});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'Error');
+    document.getElementById('createOut').value=d.loadstring;
+    document.getElementById('sSource').value=''; document.getElementById('sName').value='';
+    btn.textContent='¡Creado!'; setTimeout(()=>{btn.textContent='Create';btn.disabled=false;},1200);
+    loadScripts(); loadStats();
+  }catch(e){ alert(e.message); btn.disabled=false; btn.textContent='Create'; }
+}
+
+async function delScript(id){ if(!confirm('¿Borrar?'))return; await fetch('/api/scripts/'+id,{method:'DELETE',headers:headers()}); loadScripts(); loadStats(); }
+
+async function loadExec(){
+  const r=await fetch('/api/executions',{headers:headers()}); const logs=await r.json();
+  document.getElementById('execTable').innerHTML = logs.map(l=>`<tr class="border-t border-white/5">
+    <td class="px-4 py-2 text-zinc-400 text-xs">${new Date(l.createdAt).toLocaleString('es-ES')}</td>
+    <td class="px-4 py-2 text-violet-300">${esc(l.scriptName)}</td>
+    <td class="px-4 py-2 font-mono text-xs text-emerald-400">${l.ip||'?'}</td>
+  </tr>`).join('') || '<tr><td colspan="3" class="px-4 py-10 text-center text-zinc-500">Sin datos</td></tr>';
+}
+
+function esc(t){ const d=document.createElement('div'); d.textContent=t||''; return d.innerHTML; }
+</script>
 </body>
 </html>
