@@ -1,7 +1,7 @@
 {
-  "name": "roblox-auth-backend",
+  "name": "qyrex-api-backend",
   "version": "1.0.0",
-  "description": "Backend seguro para autenticación de Google",
+  "description": "Backend seguro para QyrexApi",
   "main": "api/auth.js",
   "dependencies": {
     "google-auth-library": "^9.9.0"
