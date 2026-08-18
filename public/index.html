@@ -10,12 +10,12 @@
   body{font-family:Inter,system-ui,sans-serif;background:#0b0b12;color:#e8e8f0}
   .side{background:#12121c;border-right:1px solid #1f1f2e}
   .card{background:#141422;border:1px solid #222235}
-  .nav-item{color:#9a9ab0}.nav-item:hover,.nav-item.active{background:#1c1c2e;color:#c4b5fd}
-  textarea,input,select{background:#0e0e18;border:1px solid #2a2a3d;color:#e8e8f0}
+  .nav-item{color:#9a9ab0}
+  .nav-item:hover,.nav-item.active{background:#1c1c2e;color:#c4b5fd}
+  textarea,input{background:#0e0e18;border:1px solid #2a2a3d;color:#e8e8f0}
 </style>
 </head>
 <body class="min-h-screen">
-<!-- LOGIN -->
 <div id="loginView" class="min-h-screen flex items-center justify-center p-6">
   <div class="card rounded-2xl p-10 w-full max-w-md text-center">
     <div class="text-3xl font-bold mb-2">QrexApi</div>
@@ -25,7 +25,6 @@
   </div>
 </div>
 
-<!-- APP -->
 <div id="appView" class="hidden min-h-screen flex">
   <aside class="side w-64 p-5 flex flex-col fixed h-full">
     <div class="font-bold text-lg mb-8 px-2">⚡ QrexApi</div>
@@ -62,9 +61,9 @@
         <input id="sName" placeholder="Name *" class="w-full rounded-xl px-4 py-3 outline-none"/>
         <input id="sDesc" placeholder="Description" class="w-full rounded-xl px-4 py-3 outline-none"/>
         <div class="text-xs text-emerald-400 bg-emerald-950/40 border border-emerald-800/50 rounded-xl px-4 py-3">
-          This is your source. It gets obfuscated with QyrexObf before users receive it.
+          Source sin ofuscar. Se ofusca con QyrexObf antes de llegar a los usuarios.
         </div>
-        <textarea id="sSource" placeholder="Paste your Lua source here..." class="w-full h-64 rounded-xl px-4 py-3 font-mono text-sm outline-none resize-none"></textarea>
+        <textarea id="sSource" placeholder="Pega tu Lua aquí..." class="w-full h-64 rounded-xl px-4 py-3 font-mono text-sm outline-none resize-none"></textarea>
         <button id="createBtn" onclick="createScript()" class="bg-violet-600 hover:bg-violet-500 px-5 py-3 rounded-xl font-semibold">Create</button>
         <textarea id="createOut" readonly class="w-full h-20 rounded-xl px-4 py-3 font-mono text-xs text-emerald-400 resize-none"></textarea>
       </div>
@@ -86,99 +85,105 @@
 const GOOGLE_CLIENT_ID = '294416776289-bc3olhe9qhh1n1l0j2klrvus8a4amb2v.apps.googleusercontent.com';
 let token = localStorage.getItem('qrex_token') || '';
 
-function headers(){ return { 'Authorization': 'Bearer '+token, 'Content-Type': 'application/json' }; }
+function headers(){
+  return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+}
 
 function showApp(user){
   document.getElementById('loginView').classList.add('hidden');
   document.getElementById('appView').classList.remove('hidden');
   document.getElementById('userLabel').textContent = user?.email || '';
-  loadStats(); loadScripts();
+  loadStats();
+  loadScripts();
 }
 
-function logout(){ token=''; localStorage.removeItem('qrex_token'); location.reload(); }
+function logout(){
+  token = '';
+  localStorage.removeItem('qrex_token');
+  location.reload();
+}
+
+function setErr(msg){
+  const el = document.getElementById('loginErr');
+  el.classList.remove('hidden');
+  el.textContent = msg || 'Error';
+}
 
 window.onload = function(){
-  if(token){
-    fetch('/api/me',{headers:headers()}).then(r=>r.ok?r.json():Promise.reject()).then(showApp).catch(logout);
+  if (token) {
+    fetch('/api/me', { headers: headers() })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(showApp)
+      .catch(logout);
   }
-  google.accounts.id.initialize({
-    client_id: GOOGLE_CLIENT_ID,
-    callback: async (resp) => {
-      try{
-        const r = await fetch('/api/auth/google',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:resp.credential})});
-        const d = await r.json();
-        if(!r.ok) throw new Error(d.error||'fail');
-        token = d.token; localStorage.setItem('qrex_token', token);
-        showApp(d.user);
-      }catch(e){
-        document.getElementById('loginErr').classList.remove('hidden');
-        document.getElementById('loginErr').textContent = e.message;
-      }
+
+  function startGoogle(){
+    if (!window.google || !google.accounts) {
+      setTimeout(startGoogle, 200);
+      return;
     }
-  });
-  google.accounts.id.renderButton(document.getElementById('gbtn'),{theme:'outline',size:'large',shape:'pill'});
+    google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: async (resp) => {
+        try {
+          const r = await fetch('/api/auth/google', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credential: resp.credential })
+          });
+          const text = await r.text();
+          let d;
+          try { d = JSON.parse(text); }
+          catch { throw new Error('API no responde JSON (revisa vercel.json / api/index.js)'); }
+          if (!r.ok) throw new Error(d.error || 'Login fallido');
+          token = d.token;
+          localStorage.setItem('qrex_token', token);
+          showApp(d.user);
+        } catch (e) {
+          setErr(e.message);
+        }
+      }
+    });
+    google.accounts.id.renderButton(document.getElementById('gbtn'), {
+      theme: 'outline',
+      size: 'large',
+      shape: 'pill'
+    });
+  }
+  startGoogle();
 };
 
 function go(p){
-  document.querySelectorAll('.page').forEach(x=>x.classList.add('hidden'));
-  document.getElementById('page-'+p).classList.remove('hidden');
-  document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
-  document.querySelector('[data-page="'+p+'"]')?.classList.add('active');
-  if(p==='scripts') loadScripts();
-  if(p==='overview') loadStats();
-  if(p==='executions') loadExec();
+  document.querySelectorAll('.page').forEach(x => x.classList.add('hidden'));
+  document.getElementById('page-' + p).classList.remove('hidden');
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector('[data-page="' + p + '"]');
+  if (btn) btn.classList.add('active');
+  if (p === 'scripts') loadScripts();
+  if (p === 'overview') loadStats();
+  if (p === 'executions') loadExec();
+}
+
+function esc(t){
+  const d = document.createElement('div');
+  d.textContent = t || '';
+  return d.innerHTML;
 }
 
 async function loadStats(){
-  const r=await fetch('/api/stats',{headers:headers()}); const d=await r.json();
-  document.getElementById('stScripts').textContent=d.scripts||0;
-  document.getElementById('stExec').textContent=d.executions||0;
+  const r = await fetch('/api/stats', { headers: headers() });
+  if (!r.ok) return;
+  const d = await r.json();
+  document.getElementById('stScripts').textContent = d.scripts || 0;
+  document.getElementById('stExec').textContent = d.executions || 0;
 }
 
 async function loadScripts(){
-  const r=await fetch('/api/scripts',{headers:headers()}); const list=await r.json();
-  const host=location.origin;
-  document.getElementById('scriptsList').innerHTML = list.map(s=>{
-    const ls=`loadstring(game:HttpGet("${host}/api/raw/${s.id}"))()`;
-    return `<div class="card rounded-xl p-5">
-      <div class="flex justify-between mb-2"><div><div class="font-semibold text-violet-300">${esc(s.name)}</div>
-      <div class="text-xs text-zinc-500">${s.executions||0} exec</div></div>
-      <button onclick="delScript('${s.id}')" class="text-xs text-red-400">Delete</button></div>
-      <textarea readonly class="w-full h-14 rounded-lg px-3 py-2 text-xs font-mono">${ls}</textarea>
-      <button onclick="navigator.clipboard.writeText(\`${ls}\`)" class="mt-2 w-full bg-violet-600 py-2 rounded-lg text-sm">Copy loadstring</button>
-    </div>`;
-  }).join('') || '<p class="text-zinc-500">No scripts yet</p>';
-}
-
-async function createScript(){
-  const name=document.getElementById('sName').value.trim();
-  const description=document.getElementById('sDesc').value.trim();
-  const source=document.getElementById('sSource').value;
-  if(!name||!source) return alert('Name y source requeridos');
-  const btn=document.getElementById('createBtn'); btn.disabled=true; btn.textContent='Ofuscando...';
-  try{
-    const r=await fetch('/api/scripts',{method:'POST',headers:headers(),body:JSON.stringify({name,description,source})});
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error||'Error');
-    document.getElementById('createOut').value=d.loadstring;
-    document.getElementById('sSource').value=''; document.getElementById('sName').value='';
-    btn.textContent='¡Creado!'; setTimeout(()=>{btn.textContent='Create';btn.disabled=false;},1200);
-    loadScripts(); loadStats();
-  }catch(e){ alert(e.message); btn.disabled=false; btn.textContent='Create'; }
-}
-
-async function delScript(id){ if(!confirm('¿Borrar?'))return; await fetch('/api/scripts/'+id,{method:'DELETE',headers:headers()}); loadScripts(); loadStats(); }
-
-async function loadExec(){
-  const r=await fetch('/api/executions',{headers:headers()}); const logs=await r.json();
-  document.getElementById('execTable').innerHTML = logs.map(l=>`<tr class="border-t border-white/5">
-    <td class="px-4 py-2 text-zinc-400 text-xs">${new Date(l.createdAt).toLocaleString('es-ES')}</td>
-    <td class="px-4 py-2 text-violet-300">${esc(l.scriptName)}</td>
-    <td class="px-4 py-2 font-mono text-xs text-emerald-400">${l.ip||'?'}</td>
-  </tr>`).join('') || '<tr><td colspan="3" class="px-4 py-10 text-center text-zinc-500">Sin datos</td></tr>';
-}
-
-function esc(t){ const d=document.createElement('div'); d.textContent=t||''; return d.innerHTML; }
-</script>
-</body>
-</html>
+  const r = await fetch('/api/scripts', { headers: headers() });
+  if (!r.ok) return;
+  const list = await r.json();
+  const host = location.origin;
+  document.getElementById('scriptsList').innerHTML = list.map(s => {
+    const ls = 'loadstring(game:HttpGet("' + host + '/api/raw/' + s.id + '"))()';
+    return '<div class="card rounded-xl p-5">' +
+      '<div class="flex justify-between mb-2"><div><div class="font-semibold text-violet-300">' + esc(s
