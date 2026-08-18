@@ -1,12 +1,12 @@
 {
-  "name": "qyrex-api-backend",
+  "name": "qyrex-api",
   "version": "1.0.0",
-  "description": "Backend seguro para QyrexApi",
+  "description": "Backend API para Qyrex",
   "main": "api/auth.js",
-  "dependencies": {
-    "google-auth-library": "^9.9.0"
-  },
   "engines": {
-    "node": "18.x"
+    "node": ">=20.x"
+  },
+  "dependencies": {
+    "google-auth-library": "^9.0.0"
   }
 }
