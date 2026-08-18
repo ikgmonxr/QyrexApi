@@ -5,94 +5,221 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>QrexApi</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  body{font-family:Inter,system-ui,sans-serif;background:#0b0b12;color:#e8e8f0}
-  .side{background:#12121c;border-right:1px solid #1f1f2e}
-  .card{background:#141422;border:1px solid #222235}
-  .nav-item{color:#9a9ab0}
-  .nav-item:hover,.nav-item.active{background:#1c1c2e;color:#c4b5fd}
-  textarea,input{background:#0e0e18;border:1px solid #2a2a3d;color:#e8e8f0}
-  input:focus,textarea:focus{outline:none;border-color:#7c3aed}
+  *{box-sizing:border-box}
+  body{font-family:Inter,system-ui,sans-serif;background:#0a0a0f;color:#e4e4ed;margin:0}
+  .sidebar{background:#0d0d14;border-right:1px solid #1a1a24;width:260px}
+  .logo-box{background:linear-gradient(135deg,#7c3aed,#5b21b6);width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+  .nav-section{font-size:10px;letter-spacing:.08em;color:#5a5a6e;font-weight:600;padding:16px 16px 6px;text-transform:uppercase}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 14px;margin:1px 8px;border-radius:8px;color:#8b8b9e;font-size:13.5px;font-weight:500;cursor:pointer;transition:all .15s;border:none;background:transparent;width:calc(100% - 16px);text-align:left}
+  .nav-item:hover{background:#16161f;color:#c4b5fd}
+  .nav-item.active{background:#1a1428;color:#a78bfa}
+  .nav-item svg{width:18px;height:18px;flex-shrink:0;opacity:.7}
+  .nav-item.active svg{opacity:1}
+  .card{background:#111118;border:1px solid #1e1e2a;border-radius:12px}
+  input,textarea{background:#0c0c12;border:1px solid #252533;color:#e4e4ed;border-radius:10px;padding:12px 14px;font-size:14px;width:100%;outline:none;transition:border .15s}
+  input:focus,textarea:focus{border-color:#7c3aed}
+  .btn-primary{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:10px;padding:12px 20px;font-weight:600;font-size:14px;cursor:pointer;transition:opacity .15s}
+  .btn-primary:hover{opacity:.9}
+  .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+  .btn-ghost{background:transparent;border:1px solid #2a2a3a;color:#a0a0b0;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer}
+  .btn-ghost:hover{border-color:#7c3aed;color:#c4b5fd}
+  .stat-val{font-size:32px;font-weight:700;line-height:1.2}
+  .badge{background:#1a1428;color:#a78bfa;font-size:11px;padding:3px 8px;border-radius:6px;font-weight:500}
+  ::-webkit-scrollbar{width:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:#2a2a3a;border-radius:3px}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;padding:12px 16px;font-size:12px;color:#5a5a6e;font-weight:600;border-bottom:1px solid #1e1e2a}
+  td{padding:12px 16px;font-size:13px;border-bottom:1px solid #15151e}
+  .user-pill{display:flex;align-items:center;gap:10px;padding:12px 14px;margin:8px;border-radius:10px;background:#111118;border:1px solid #1e1e2a}
+  .avatar{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#7c3aed,#4c1d95);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff}
 </style>
 </head>
-<body class="min-h-screen">
-<div id="loginView" class="min-h-screen flex items-center justify-center p-6">
-  <div class="card rounded-2xl p-10 w-full max-w-md">
-    <div class="text-3xl font-bold mb-2 text-center">QrexApi</div>
-    <p class="text-sm text-zinc-400 mb-8 text-center">Scripts · Ofuscación · Dashboard</p>
+<body>
 
-    <div class="flex gap-2 mb-6">
-      <button id="tabLogin" onclick="setTab('login')" class="flex-1 py-2 rounded-lg text-sm font-medium bg-violet-600">Entrar</button>
-      <button id="tabReg" onclick="setTab('register')" class="flex-1 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-400">Registrarse</button>
+<!-- LOGIN -->
+<div id="loginView" class="min-h-screen flex items-center justify-center p-6" style="background:#0a0a0f">
+  <div class="card p-10 w-full max-w-md">
+    <div class="flex items-center justify-center gap-3 mb-2">
+      <div class="logo-box">Q</div>
+      <span class="text-2xl font-bold tracking-tight">QrexApi</span>
+    </div>
+    <p class="text-center text-sm mb-8" style="color:#6b6b80">Scripts · Ofuscación · Dashboard</p>
+
+    <div class="flex gap-2 mb-6 p-1 rounded-xl" style="background:#0c0c12">
+      <button id="tabLogin" onclick="setTab('login')" class="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all" style="background:#7c3aed;color:#fff">Entrar</button>
+      <button id="tabReg" onclick="setTab('register')" class="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all" style="background:transparent;color:#6b6b80">Registrarse</button>
     </div>
 
-    <div class="space-y-4">
-      <input id="authUser" type="text" placeholder="Usuario" autocomplete="username"
-        class="w-full rounded-xl px-4 py-3 text-sm"/>
-      <input id="authPass" type="password" placeholder="Contraseña" autocomplete="current-password"
-        class="w-full rounded-xl px-4 py-3 text-sm"/>
-      <button id="authBtn" onclick="doAuth()" class="w-full bg-violet-600 hover:bg-violet-500 py-3 rounded-xl font-semibold">
-        Entrar
-      </button>
-      <p id="loginErr" class="text-red-400 text-sm text-center hidden"></p>
+    <div class="space-y-3">
+      <input id="authUser" type="text" placeholder="Usuario" autocomplete="username"/>
+      <input id="authPass" type="password" placeholder="Contraseña" autocomplete="current-password"/>
+      <button id="authBtn" onclick="doAuth()" class="btn-primary w-full mt-2">Entrar</button>
+      <p id="loginErr" class="text-red-400 text-sm text-center hidden mt-2"></p>
     </div>
   </div>
 </div>
 
-<div id="appView" class="hidden min-h-screen flex">
-  <aside class="side w-64 p-5 flex flex-col fixed h-full">
-    <div class="font-bold text-lg mb-8 px-2">⚡ QrexApi</div>
-    <nav class="flex flex-col gap-1 flex-1 text-sm">
-      <button class="nav-item active text-left px-3 py-2.5 rounded-lg" data-page="overview" onclick="go('overview')">Overview</button>
-      <button class="nav-item text-left px-3 py-2.5 rounded-lg" data-page="scripts" onclick="go('scripts')">Lua Scripts</button>
-      <button class="nav-item text-left px-3 py-2.5 rounded-lg" data-page="create" onclick="go('create')">Create Script</button>
-      <button class="nav-item text-left px-3 py-2.5 rounded-lg" data-page="executions" onclick="go('executions')">Executions</button>
-    </nav>
-    <div class="text-xs text-zinc-500 px-2 mb-2" id="userLabel"></div>
-    <button onclick="logout()" class="text-left text-red-400 text-sm px-3 py-2">Cerrar sesión</button>
-  </aside>
+<!-- APP -->
+<div id="appView" class="hidden" style="display:none;min-height:100vh">
+  <div class="flex" style="min-height:100vh">
 
-  <main class="ml-64 flex-1 p-8">
-    <section id="page-overview" class="page">
-      <h1 class="text-2xl font-bold mb-6">Overview</h1>
-      <div class="grid grid-cols-2 gap-4 max-w-xl">
-        <div class="card rounded-xl p-5"><div class="text-zinc-400 text-sm">Scripts</div><div id="stScripts" class="text-3xl font-bold">0</div></div>
-        <div class="card rounded-xl p-5"><div class="text-zinc-400 text-sm">Ejecuciones</div><div id="stExec" class="text-3xl font-bold text-violet-400">0</div></div>
+    <!-- SIDEBAR -->
+    <aside class="sidebar flex flex-col fixed h-full z-20">
+      <div class="flex items-center gap-3 px-5 py-5">
+        <div class="logo-box">Q</div>
+        <span class="font-bold text-lg tracking-tight">QrexApi</span>
       </div>
-    </section>
 
-    <section id="page-scripts" class="page hidden">
-      <div class="flex justify-between mb-6">
-        <h1 class="text-2xl font-bold">Lua Scripts</h1>
-        <button onclick="go('create')" class="bg-violet-600 hover:bg-violet-500 px-4 py-2 rounded-lg text-sm">+ Create</button>
-      </div>
-      <div id="scriptsList" class="grid gap-4"></div>
-    </section>
+      <nav class="flex-1 overflow-y-auto pb-4">
+        <div class="nav-section">General</div>
+        <button class="nav-item active" data-page="overview" onclick="go('overview')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1h-2z"/></svg>
+          Overview
+        </button>
 
-    <section id="page-create" class="page hidden">
-      <h1 class="text-2xl font-bold mb-6">Create Script</h1>
-      <div class="card rounded-2xl p-6 max-w-3xl space-y-4">
-        <input id="sName" placeholder="Name *" class="w-full rounded-xl px-4 py-3 outline-none"/>
-        <input id="sDesc" placeholder="Description" class="w-full rounded-xl px-4 py-3 outline-none"/>
-        <div class="text-xs text-emerald-400 bg-emerald-950/40 border border-emerald-800/50 rounded-xl px-4 py-3">
-          Source sin ofuscar. Se ofusca con QyrexObf antes de llegar a los usuarios.
+        <div class="nav-section">Scripts</div>
+        <button class="nav-item" data-page="scripts" onclick="go('scripts')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          Lua Scripts
+        </button>
+        <button class="nav-item" data-page="create" onclick="go('create')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
+          Create Script
+        </button>
+        <button class="nav-item" data-page="executions" onclick="go('executions')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+          Executions
+        </button>
+
+        <div class="nav-section">Developer</div>
+        <button class="nav-item" data-page="apiinfo" onclick="go('apiinfo')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+          API Info
+        </button>
+      </nav>
+
+      <div class="user-pill">
+        <div class="avatar" id="userAvatar">?</div>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-medium truncate" id="userLabel">—</div>
+          <div class="text-xs" style="color:#5a5a6e">Usuario</div>
         </div>
-        <textarea id="sSource" placeholder="Pega tu Lua aquí..." class="w-full h-64 rounded-xl px-4 py-3 font-mono text-sm outline-none resize-none"></textarea>
-        <button id="createBtn" onclick="createScript()" class="bg-violet-600 hover:bg-violet-500 px-5 py-3 rounded-xl font-semibold">Create</button>
-        <textarea id="createOut" readonly class="w-full h-20 rounded-xl px-4 py-3 font-mono text-xs text-emerald-400 resize-none"></textarea>
+        <button onclick="logout()" title="Cerrar sesión" style="background:none;border:none;color:#5a5a6e;cursor:pointer;padding:4px">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        </button>
       </div>
-    </section>
+    </aside>
 
-    <section id="page-executions" class="page hidden">
-      <h1 class="text-2xl font-bold mb-6">Executions</h1>
-      <div class="card rounded-xl overflow-hidden">
-        <table class="w-full text-sm">
-          <thead class="text-zinc-500 text-left"><tr><th class="px-4 py-3">Fecha</th><th class="px-4 py-3">Script</th><th class="px-4 py-3">IP</th></tr></thead>
-          <tbody id="execTable"></tbody>
-        </table>
+    <!-- MAIN -->
+    <main class="flex-1 ml-[260px] min-h-screen">
+      <!-- top bar -->
+      <div class="flex items-center justify-between px-8 py-4 border-b" style="border-color:#1a1a24;background:#0a0a0f">
+        <div class="text-sm" style="color:#5a5a6e">
+          Dashboard <span style="color:#3a3a4a">›</span> <span id="breadcrumb" style="color:#a0a0b0">Overview</span>
+        </div>
       </div>
-    </section>
-  </main>
+
+      <div class="p-8">
+        <!-- OVERVIEW -->
+        <section id="page-overview" class="page">
+          <h1 class="text-2xl font-bold mb-6">Overview</h1>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-3xl">
+            <div class="card p-5">
+              <div class="text-xs font-medium mb-2" style="color:#6b6b80">Scripts</div>
+              <div class="stat-val" id="stScripts">0</div>
+            </div>
+            <div class="card p-5">
+              <div class="text-xs font-medium mb-2" style="color:#6b6b80">Ejecuciones</div>
+              <div class="stat-val" style="color:#a78bfa" id="stExec">0</div>
+            </div>
+            <div class="card p-5">
+              <div class="text-xs font-medium mb-2" style="color:#6b6b80">Estado</div>
+              <div class="flex items-center gap-2 mt-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span class="text-sm font-medium text-emerald-400">Online</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SCRIPTS -->
+        <section id="page-scripts" class="page hidden">
+          <div class="flex items-center justify-between mb-6">
+            <h1 class="text-2xl font-bold">Lua Scripts</h1>
+            <button onclick="go('create')" class="btn-primary text-sm py-2.5 px-4">+ Create</button>
+          </div>
+          <div id="scriptsList" class="grid gap-3"></div>
+        </section>
+
+        <!-- CREATE -->
+        <section id="page-create" class="page hidden">
+          <h1 class="text-2xl font-bold mb-6">Create Script</h1>
+          <div class="card p-6 max-w-3xl space-y-4">
+            <div>
+              <label class="text-xs font-medium mb-1.5 block" style="color:#6b6b80">Name *</label>
+              <input id="sName" placeholder="Mi script"/>
+            </div>
+            <div>
+              <label class="text-xs font-medium mb-1.5 block" style="color:#6b6b80">Description</label>
+              <input id="sDesc" placeholder="Opcional"/>
+            </div>
+            <div class="rounded-xl px-4 py-3 text-xs" style="background:#0d1f14;border:1px solid #1a3a28;color:#34d399">
+              Source sin ofuscar. Se ofusca con QyrexObf antes de llegar a los usuarios.
+            </div>
+            <div>
+              <label class="text-xs font-medium mb-1.5 block" style="color:#6b6b80">Lua Source *</label>
+              <textarea id="sSource" placeholder="Pega tu Lua aquí..." class="h-64 font-mono text-sm resize-none"></textarea>
+            </div>
+            <button id="createBtn" onclick="createScript()" class="btn-primary">Create Script</button>
+            <textarea id="createOut" readonly class="h-20 font-mono text-xs resize-none" style="color:#34d399"></textarea>
+          </div>
+        </section>
+
+        <!-- EXECUTIONS -->
+        <section id="page-executions" class="page hidden">
+          <h1 class="text-2xl font-bold mb-6">Executions</h1>
+          <div class="card overflow-hidden">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Script</th>
+                  <th>IP</th>
+                </tr>
+              </thead>
+              <tbody id="execTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- API INFO -->
+        <section id="page-apiinfo" class="page hidden">
+          <h1 class="text-2xl font-bold mb-6">API Info</h1>
+          <div class="card p-6 max-w-2xl space-y-4">
+            <div>
+              <div class="text-xs font-medium mb-1" style="color:#6b6b80">Base URL</div>
+              <code class="text-sm" style="color:#a78bfa" id="apiBase"></code>
+            </div>
+            <div>
+              <div class="text-xs font-medium mb-1" style="color:#6b6b80">Health</div>
+              <code class="text-sm" style="color:#8b8b9e">GET /api/health</code>
+            </div>
+            <div>
+              <div class="text-xs font-medium mb-1" style="color:#6b6b80">Raw script (Roblox)</div>
+              <code class="text-sm" style="color:#8b8b9e">GET /api/raw/:id</code>
+            </div>
+            <div class="rounded-xl px-4 py-3 text-xs" style="background:#14141e;border:1px solid #252533;color:#8b8b9e">
+              Los loadstrings se generan automáticamente al crear un script. Usa el botón "Copiar loadstring" en Lua Scripts.
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
 </div>
 
 <script>
@@ -106,24 +233,29 @@ function headers(){
 function setTab(m){
   mode = m;
   const btn = document.getElementById('authBtn');
-  const tLogin = document.getElementById('tabLogin');
-  const tReg = document.getElementById('tabReg');
+  const tL = document.getElementById('tabLogin');
+  const tR = document.getElementById('tabReg');
   if (m === 'login') {
     btn.textContent = 'Entrar';
-    tLogin.className = 'flex-1 py-2 rounded-lg text-sm font-medium bg-violet-600';
-    tReg.className = 'flex-1 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-400';
+    tL.style.background = '#7c3aed'; tL.style.color = '#fff';
+    tR.style.background = 'transparent'; tR.style.color = '#6b6b80';
   } else {
     btn.textContent = 'Crear cuenta';
-    tReg.className = 'flex-1 py-2 rounded-lg text-sm font-medium bg-violet-600';
-    tLogin.className = 'flex-1 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-400';
+    tR.style.background = '#7c3aed'; tR.style.color = '#fff';
+    tL.style.background = 'transparent'; tL.style.color = '#6b6b80';
   }
   document.getElementById('loginErr').classList.add('hidden');
 }
 
 function showApp(user){
-  document.getElementById('loginView').classList.add('hidden');
-  document.getElementById('appView').classList.remove('hidden');
-  document.getElementById('userLabel').textContent = '@' + (user?.username || '');
+  document.getElementById('loginView').style.display = 'none';
+  const av = document.getElementById('appView');
+  av.classList.remove('hidden');
+  av.style.display = 'block';
+  const name = user?.username || '?';
+  document.getElementById('userLabel').textContent = name;
+  document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+  document.getElementById('apiBase').textContent = location.origin;
   loadStats();
   loadScripts();
 }
@@ -144,10 +276,7 @@ async function doAuth(){
   const username = document.getElementById('authUser').value.trim();
   const password = document.getElementById('authPass').value;
   const btn = document.getElementById('authBtn');
-  if (!username || !password) {
-    setErr('Pon usuario y contraseña');
-    return;
-  }
+  if (!username || !password) { setErr('Pon usuario y contraseña'); return; }
   btn.disabled = true;
   btn.textContent = '...';
   document.getElementById('loginErr').classList.add('hidden');
@@ -161,10 +290,7 @@ async function doAuth(){
     const text = await r.text();
     let d;
     try { d = JSON.parse(text); }
-    catch {
-      console.error('No JSON:', text.slice(0, 200));
-      throw new Error('API no responde JSON. Revisa vercel.json y redeploy.');
-    }
+    catch { throw new Error('API no responde JSON'); }
     if (!r.ok) throw new Error(d.error || 'Error');
     token = d.token;
     localStorage.setItem('qrex_token', token);
@@ -178,9 +304,7 @@ async function doAuth(){
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !document.getElementById('loginView').classList.contains('hidden')) {
-    doAuth();
-  }
+  if (e.key === 'Enter' && document.getElementById('loginView').style.display !== 'none') doAuth();
 });
 
 window.onload = function(){
@@ -192,12 +316,15 @@ window.onload = function(){
   }
 };
 
+const pageNames = { overview:'Overview', scripts:'Lua Scripts', create:'Create Script', executions:'Executions', apiinfo:'API Info' };
+
 function go(p){
   document.querySelectorAll('.page').forEach(x => x.classList.add('hidden'));
   document.getElementById('page-' + p).classList.remove('hidden');
   document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
   const btn = document.querySelector('[data-page="' + p + '"]');
   if (btn) btn.classList.add('active');
+  document.getElementById('breadcrumb').textContent = pageNames[p] || p;
   if (p === 'scripts') loadScripts();
   if (p === 'overview') loadStats();
   if (p === 'executions') loadExec();
@@ -210,31 +337,42 @@ function esc(t){
 }
 
 async function loadStats(){
-  const r = await fetch('/api/stats', { headers: headers() });
-  if (!r.ok) return;
-  const d = await r.json();
-  document.getElementById('stScripts').textContent = d.scripts || 0;
-  document.getElementById('stExec').textContent = d.executions || 0;
+  try {
+    const r = await fetch('/api/stats', { headers: headers() });
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('stScripts').textContent = d.scripts || 0;
+    document.getElementById('stExec').textContent = d.executions || 0;
+  } catch {}
 }
 
 async function loadScripts(){
-  const r = await fetch('/api/scripts', { headers: headers() });
-  if (!r.ok) return;
-  const list = await r.json();
-  const host = location.origin;
-  document.getElementById('scriptsList').innerHTML = list.map(s => {
-    const ls = 'loadstring(game:HttpGet("' + host + '/api/raw/' + s.id + '"))()';
-    return '<div class="card rounded-xl p-5">' +
-      '<div class="flex justify-between mb-2"><div><div class="font-semibold text-violet-300">' + esc(s.name) + '</div>' +
-      '<div class="text-xs text-zinc-500">' + esc(s.description || '') + '</div></div>' +
-      '<div class="text-xs text-zinc-400">Ejecuciones: ' + (s.executions || 0) + '</div></div>' +
-      '<div class="mt-3 flex gap-2">' +
-      '<button onclick="navigator.clipboard.writeText(\'' + ls.replace(/'/g, "\\'") + '\')" class="text-xs bg-violet-700/50 hover:bg-violet-600 px-3 py-1.5 rounded-lg">Copiar loadstring</button>' +
-      '<button onclick="delScript(\'' + s.id + '\')" class="text-xs text-red-400 hover:text-red-300 px-3 py-1.5">Eliminar</button>' +
-      '</div>' +
-      '<pre class="mt-3 text-[10px] text-zinc-500 overflow-x-auto whitespace-pre-wrap break-all">' + esc(ls) + '</pre>' +
+  try {
+    const r = await fetch('/api/scripts', { headers: headers() });
+    if (!r.ok) return;
+    const list = await r.json();
+    const host = location.origin;
+    const el = document.getElementById('scriptsList');
+    if (!list.length) {
+      el.innerHTML = '<div class="card p-8 text-center" style="color:#5a5a6e">No hay scripts todavía. Crea uno.</div>';
+      return;
+    }
+    el.innerHTML = list.map(s => {
+      const ls = 'loadstring(game:HttpGet("' + host + '/api/raw/' + s.id + '"))()';
+      return '<div class="card p-5">' +
+        '<div class="flex justify-between items-start mb-3">' +
+          '<div><div class="font-semibold" style="color:#c4b5fd">' + esc(s.name) + '</div>' +
+          '<div class="text-xs mt-0.5" style="color:#5a5a6e">' + esc(s.description || 'Sin descripción') + '</div></div>' +
+          '<span class="badge">' + (s.executions || 0) + ' runs</span>' +
+        '</div>' +
+        '<div class="flex gap-2 mb-3">' +
+          '<button onclick="navigator.clipboard.writeText(\'' + ls.replace(/'/g,"\\'") + '\')" class="btn-ghost">Copiar loadstring</button>' +
+          '<button onclick="delScript(\'' + s.id + '\')" class="btn-ghost" style="color:#f87171;border-color:#3a1a1a">Eliminar</button>' +
+        '</div>' +
+        '<pre class="text-[11px] overflow-x-auto whitespace-pre-wrap break-all p-3 rounded-lg" style="background:#0c0c12;color:#5a5a6e">' + esc(ls) + '</pre>' +
       '</div>';
-  }).join('') || '<p class="text-zinc-500">No hay scripts todavía.</p>';
+    }).join('');
+  } catch {}
 }
 
 async function createScript(){
@@ -265,7 +403,7 @@ async function createScript(){
     out.value = 'Error: ' + e.message;
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Create';
+    btn.textContent = 'Create Script';
   }
 }
 
@@ -277,13 +415,15 @@ async function delScript(id){
 }
 
 async function loadExec(){
-  const r = await fetch('/api/executions', { headers: headers() });
-  if (!r.ok) return;
-  const list = await r.json();
-  document.getElementById('execTable').innerHTML = list.map(e => {
-    const d = e.createdAt ? new Date(e.createdAt).toLocaleString() : '-';
-    return '<tr class="border-t border-zinc-800"><td class="px-4 py-2">' + esc(d) + '</td><td class="px-4 py-2">' + esc(e.scriptName) + '</td><td class="px-4 py-2 text-zinc-400">' + esc(e.ip) + '</td></tr>';
-  }).join('') || '<tr><td colspan="3" class="px-4 py-6 text-zinc-500 text-center">Sin ejecuciones</td></tr>';
+  try {
+    const r = await fetch('/api/executions', { headers: headers() });
+    if (!r.ok) return;
+    const list = await r.json();
+    document.getElementById('execTable').innerHTML = list.map(e => {
+      const d = e.createdAt ? new Date(e.createdAt).toLocaleString() : '-';
+      return '<tr><td style="color:#8b8b9e">' + esc(d) + '</td><td>' + esc(e.scriptName) + '</td><td style="color:#5a5a6e">' + esc(e.ip) + '</td></tr>';
+    }).join('') || '<tr><td colspan="3" class="text-center py-8" style="color:#5a5a6e">Sin ejecuciones</td></tr>';
+  } catch {}
 }
 </script>
 </body>
