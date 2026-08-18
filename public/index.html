@@ -10,6 +10,36 @@
 <style>
   *{box-sizing:border-box}
   body{font-family:Inter,system-ui,sans-serif;background:#0a0a0f;color:#e4e4ed;margin:0}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  @keyframes scaleIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+  @keyframes slideRight{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:none}}
+  @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  @keyframes glowPulse{0%,100%{box-shadow:0 0 0 0 rgba(124,58,237,.0)}50%{box-shadow:0 0 24px 0 rgba(124,58,237,.15)}}
+  .page{animation:fadeUp .4s cubic-bezier(.22,1,.36,1) both}
+  .card{transition:border-color .2s,box-shadow .25s,transform .25s}
+  .card:hover{border-color:#2a2a3d}
+  .nav-item{transition:all .2s cubic-bezier(.22,1,.36,1)}
+  .btn-primary{transition:opacity .2s,transform .2s,box-shadow .2s}
+  .btn-primary:hover{opacity:.92;transform:translateY(-1px);box-shadow:0 8px 24px rgba(124,58,237,.35)}
+  .btn-ghost{transition:all .2s}
+  .stat-val{animation:fadeUp .5s .1s both}
+  #loginView .card{animation:scaleIn .5s cubic-bezier(.22,1,.36,1) both}
+  .sidebar{animation:slideRight .4s cubic-bezier(.22,1,.36,1) both}
+  #scriptsList .card{animation:fadeUp .35s both}
+  #scriptsList .card:nth-child(1){animation-delay:.05s}
+  #scriptsList .card:nth-child(2){animation-delay:.1s}
+  #scriptsList .card:nth-child(3){animation-delay:.15s}
+  #scriptsList .card:nth-child(4){animation-delay:.2s}
+  #scriptsList .card:nth-child(5){animation-delay:.25s}
+  input,textarea,select{transition:border-color .2s,box-shadow .2s}
+  input:focus,textarea:focus,select:focus{box-shadow:0 0 0 3px rgba(124,58,237,.15)}
+  .user-pill{transition:border-color .2s}
+  .user-pill:hover{border-color:#2a2a3d}
+  .badge{transition:transform .2s}
+  .editor-wrap{transition:border-color .2s}
+  .editor-wrap:focus-within{border-color:#7c3aed}
+
   .sidebar{background:#0d0d14;border-right:1px solid #1a1a24;width:260px}
   .nav-section{font-size:10px;letter-spacing:.08em;color:#5a5a6e;font-weight:600;padding:16px 16px 6px;text-transform:uppercase}
   .nav-item{display:flex;align-items:center;gap:10px;padding:9px 14px;margin:1px 8px;border-radius:8px;color:#8b8b9e;font-size:13.5px;font-weight:500;cursor:pointer;transition:all .15s;border:none;background:transparent;width:calc(100% - 16px);text-align:left}
@@ -100,6 +130,11 @@
         <button class="nav-item" data-page="apiinfo" onclick="go('apiinfo')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
           API Info
+        </button>
+        <div class="nav-section">Account</div>
+        <button class="nav-item" data-page="settings" onclick="go('settings')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          Settings
         </button>
       </nav>
       <div class="user-pill">
@@ -273,6 +308,38 @@
               <div class="text-xs font-medium mb-1" style="color:#6b6b80">Raw script</div>
               <code class="text-sm" style="color:#8b8b9e">GET /api/raw/:id</code>
             </div>
+            <div class="hint-green">Si abres /api/raw/:id en el navegador verás la página Access Denied. Solo Roblox/executors reciben el script.</div>
+          </div>
+        </section>
+
+        <!-- SETTINGS -->
+        <section id="page-settings" class="page hidden">
+          <h1 class="text-2xl font-bold mb-6">Settings</h1>
+          <div class="grid gap-4 max-w-2xl">
+            <div class="card p-6">
+              <div class="text-sm font-semibold mb-1">Cuenta</div>
+              <div class="text-xs mb-4" style="color:#5a5a6e">Información de tu sesión</div>
+              <div class="flex items-center gap-3 mb-4">
+                <div class="avatar" id="settingsAvatar">?</div>
+                <div>
+                  <div class="font-medium" id="settingsUser">—</div>
+                  <div class="text-xs" style="color:#5a5a6e">Usuario QrexApi</div>
+                </div>
+              </div>
+              <button onclick="logout()" class="btn-ghost" style="color:#f87171;border-color:#3a1a1a">Cerrar sesión</button>
+            </div>
+            <div class="card p-6">
+              <div class="text-sm font-semibold mb-1">Preferencias</div>
+              <div class="text-xs mb-4" style="color:#5a5a6e">Opciones locales del panel</div>
+              <label class="flex items-center justify-between py-2 cursor-pointer">
+                <span class="text-sm" style="color:#a0a0b0">Animaciones</span>
+                <input type="checkbox" id="prefAnim" checked onchange="toggleAnim(this.checked)" style="width:auto;accent-color:#7c3aed"/>
+              </label>
+              <label class="flex items-center justify-between py-2 cursor-pointer">
+                <span class="text-sm" style="color:#a0a0b0">Copiar loadstring al crear</span>
+                <input type="checkbox" id="prefCopy" checked style="width:auto;accent-color:#7c3aed"/>
+              </label>
+            </div>
           </div>
         </section>
       </div>
@@ -320,10 +387,21 @@ function showApp(user){
   const name = user?.username || '?';
   document.getElementById('userLabel').textContent = name;
   document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+  const sa = document.getElementById('settingsAvatar');
+  const su = document.getElementById('settingsUser');
+  if (sa) sa.textContent = name.charAt(0).toUpperCase();
+  if (su) su.textContent = name;
   document.getElementById('apiBase').textContent = location.origin;
   loadStats();
   loadScripts();
   loadAnalytics();
+}
+
+function toggleAnim(on){
+  document.documentElement.style.setProperty('--anim', on ? '1' : '0');
+  if (!on) {
+    document.querySelectorAll('.page,.card,.sidebar').forEach(el => { el.style.animation = 'none'; });
+  }
 }
 
 function logout(){ token = ''; localStorage.removeItem('qrex_token'); location.reload(); }
@@ -365,7 +443,7 @@ window.onload = function(){
   updateLines();
 };
 
-const pageNames = { overview:'Overview', scripts:'Lua Scripts', create:'Create Script', executions:'Analytics', apiinfo:'API Info' };
+const pageNames = { overview:'Overview', scripts:'Lua Scripts', create:'Create Script', executions:'Analytics', apiinfo:'API Info', settings:'Settings' };
 
 function go(p){
   document.querySelectorAll('.page').forEach(x => x.classList.add('hidden'));
@@ -453,6 +531,10 @@ async function createScript(){
     if (!r.ok) throw new Error(d.error || 'Error');
     wrap.classList.remove('hidden');
     out.value = d.loadstring || JSON.stringify(d);
+    const prefCopy = document.getElementById('prefCopy');
+    if (prefCopy && prefCopy.checked && d.loadstring) {
+      try { navigator.clipboard.writeText(d.loadstring); } catch {}
+    }
     document.getElementById('sName').value = '';
     document.getElementById('sDesc').value = '';
     document.getElementById('sSource').value = '';
