@@ -2,8 +2,8 @@ const { OAuth2Client } = require('google-auth-library');
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 module.exports = async (req, res) => {
-    // Configurar CORS para permitir peticiones desde tu GitHub Pages
-    res.setHeader('Access-Control-Allow-Origin', 'https://tu-usuario.github.io');
+    // Configurar CORS autorizado específicamente para tu GitHub Pages
+    res.setHeader('Access-Control-Allow-Origin', 'https://ikgmonxr.github.io');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
@@ -20,7 +20,6 @@ module.exports = async (req, res) => {
             });
             const payload = ticket.getPayload();
             
-            // Retorna los datos del usuario de forma segura
             return res.status(200).json({ 
                 success: true, 
                 user: { 
