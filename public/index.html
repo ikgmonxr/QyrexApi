@@ -153,6 +153,11 @@
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
           API Info
         </button>
+        <div class="nav-section admin-only" style="display:none">Admin</div>
+        <button class="nav-item admin-only" style="display:none" data-page="admin" onclick="go('admin')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          Admin Panel
+        </button>
         <div class="nav-section">Account</div>
         <button class="nav-item" data-page="settings" onclick="go('settings')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
@@ -231,7 +236,7 @@
 
           <div id="hubPublishCard" class="card p-6 max-w-2xl mb-6 hidden">
             <div class="text-sm font-semibold mb-1">Publicar en el Hub</div>
-            <div class="text-xs mb-4" style="color:#5a5a6e">Solo scripts tuyos con <b style="color:#a78bfa">500+ ejecuciones</b>. Todos podrán ver el loadstring.</div>
+            <div class="text-xs mb-4" style="color:#5a5a6e">Scripts con <b style="color:#a78bfa">500+ ejecuciones</b> o cuenta <b style="color:#fbbf24">Premium</b>. Todos verán el loadstring.</div>
             <div class="space-y-4">
               <div>
                 <label class="field">Tu script (500+ runs) <span class="req">*</span></label>
@@ -382,6 +387,62 @@
           </div>
         </section>
 
+
+        <!-- ADMIN -->
+        <section id="page-admin" class="page hidden">
+          <h1 class="text-2xl font-bold mb-2">Admin Panel</h1>
+          <p class="text-xs mb-6" style="color:#5a5a6e">Solo visible para OWNER / admin</p>
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="adminStats">
+            <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Users</div><div class="text-2xl font-bold" id="aUsers">—</div></div>
+            <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Scripts</div><div class="text-2xl font-bold" id="aScripts">—</div></div>
+            <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Hub</div><div class="text-2xl font-bold" id="aHub">—</div></div>
+            <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Premium</div><div class="text-2xl font-bold" style="color:#fbbf24" id="aPrem">—</div></div>
+          </div>
+
+          <div class="card p-6 mb-6 max-w-xl">
+            <div class="text-sm font-semibold mb-3">Dar / quitar Premium</div>
+            <div class="flex flex-wrap gap-2">
+              <input id="premUser" placeholder="username" style="max-width:160px"/>
+              <input id="premDays" type="number" placeholder="días (30)" value="30" style="max-width:110px"/>
+              <button class="btn-primary text-sm" onclick="adminSetPremium(true)">Activar</button>
+              <button class="btn-ghost text-sm" style="color:#f87171;border-color:#3a1a1a" onclick="adminSetPremium(false)">Quitar</button>
+            </div>
+          </div>
+
+          <div class="card overflow-hidden mb-6">
+            <div class="px-5 py-3 border-b text-sm font-semibold" style="border-color:#1e1e2a">Usuarios</div>
+            <div class="overflow-x-auto">
+              <table>
+                <thead><tr><th>User</th><th>Role</th><th>Premium</th><th>Desde</th></tr></thead>
+                <tbody id="adminUsers"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card overflow-hidden mb-6">
+            <div class="px-5 py-3 border-b text-sm font-semibold flex justify-between" style="border-color:#1e1e2a">
+              <span>Todos los scripts</span>
+              <button class="btn-ghost text-xs" onclick="loadAdminScripts()">Refresh</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table>
+                <thead><tr><th>Name</th><th>Owner</th><th>Runs</th><th></th></tr></thead>
+                <tbody id="adminScripts"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card overflow-hidden">
+            <div class="px-5 py-3 border-b text-sm font-semibold" style="border-color:#1e1e2a">Hub público</div>
+            <div class="overflow-x-auto">
+              <table>
+                <thead><tr><th>Name</th><th>Author</th><th>Views</th><th></th></tr></thead>
+                <tbody id="adminHub"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <!-- SETTINGS -->
         <section id="page-settings" class="page hidden">
           <h1 class="text-2xl font-bold mb-6">Settings</h1>
@@ -393,10 +454,15 @@
                 <div class="avatar" id="settingsAvatar">?</div>
                 <div>
                   <div class="font-medium" id="settingsUser">—</div>
-                  <div class="text-xs" style="color:#5a5a6e">Usuario QrexApi</div>
+                  <div id="userBadges" class="flex flex-wrap gap-1 mt-1"></div>
                 </div>
               </div>
-              <button onclick="logout()" class="btn-ghost" style="color:#f87171;border-color:#3a1a1a">Cerrar sesión</button>
+              <div id="premiumBox" class="mt-4 p-4 rounded-xl" style="background:#14120a;border:1px solid #3d3418">
+                <div class="text-sm font-semibold" style="color:#fbbf24">✦ Premium</div>
+                <div class="text-xs mt-1 mb-3" style="color:#8b8b9e">Publica en el Hub sin 500 runs, badge dorado y más prioridad.</div>
+                <div class="text-xs" style="color:#5a5a6e">Contacta a <b style="color:#a78bfa">OWNER</b> para activar Premium en tu cuenta.</div>
+              </div>
+              <button onclick="logout()" class="btn-ghost mt-4" style="color:#f87171;border-color:#3a1a1a">Cerrar sesión</button>
             </div>
             <div class="card p-6">
               <div class="text-sm font-semibold mb-1">Preferencias</div>
@@ -419,6 +485,7 @@
 
 <script>
 let token = localStorage.getItem('qrex_token') || '';
+let currentUser = null;
 let mode = 'login';
 let chartDaily, chartScripts, chartHourly, chartOverview;
 
@@ -452,6 +519,7 @@ function setTab(m){
 }
 
 function showApp(user){
+  currentUser = user || {};
   document.getElementById('loginView').style.display = 'none';
   document.getElementById('appView').style.display = 'block';
   const name = user?.username || '?';
@@ -461,6 +529,18 @@ function showApp(user){
   const su = document.getElementById('settingsUser');
   if (sa) sa.textContent = name.charAt(0).toUpperCase();
   if (su) su.textContent = name;
+  // badges
+  const badgeEl = document.getElementById('userBadges');
+  if (badgeEl) {
+    let b = '';
+    if (user?.role === 'admin') b += '<span class="chip" style="background:#1a1428;color:#a78bfa;border-color:#3b2a5c">ADMIN</span> ';
+    if (user?.premium) b += '<span class="chip" style="background:#1a1810;color:#fbbf24;border-color:#3d3418">PREMIUM</span>';
+    badgeEl.innerHTML = b || '<span class="text-xs" style="color:#5a5a6e">Usuario QrexApi</span>';
+  }
+  // admin nav
+  document.querySelectorAll('.admin-only').forEach(el => {
+    el.style.display = user?.role === 'admin' ? '' : 'none';
+  });
   document.getElementById('apiBase').textContent = location.origin;
   loadStats();
   loadScripts();
@@ -513,7 +593,7 @@ window.onload = function(){
   updateLines();
 };
 
-const pageNames = { overview:'Overview', scripts:'Lua Scripts', hub:'Script Hub', create:'Create Script', executions:'Analytics', apiinfo:'API Info', settings:'Settings' };
+const pageNames = { overview:'Overview', scripts:'Lua Scripts', hub:'Script Hub', create:'Create Script', executions:'Analytics', apiinfo:'API Info', settings:'Settings', admin:'Admin Panel' };
 
 function go(p){
   document.querySelectorAll('.page').forEach(x => x.classList.add('hidden'));
@@ -524,6 +604,7 @@ function go(p){
   document.getElementById('breadcrumb').textContent = pageNames[p] || p;
   if (p === 'scripts') loadScripts();
   if (p === 'hub') loadHub();
+  if (p === 'admin') loadAdmin();
   if (p === 'overview') { loadStats(); loadAnalytics(); }
   if (p === 'executions') loadAnalytics();
 }
@@ -812,18 +893,94 @@ async function fillHubSelect(){
     const r = await fetch('/api/scripts', { headers: headers() });
     if (!r.ok) return;
     const list = await r.json();
-    const ok = list.filter(s => (s.executions||0) >= 500);
+    const prem = !!(currentUser && currentUser.premium);
+    const ok = prem ? list : list.filter(s => (s.executions||0) >= 500);
     if (!ok.length) {
-      sel.innerHTML = '<option value="">Ningún script con 500+ runs</option>';
+      sel.innerHTML = prem
+        ? '<option value="">No tienes scripts</option>'
+        : '<option value="">Ningún script con 500+ runs (o activa Premium)</option>';
       return;
     }
-    sel.innerHTML = ok.map(s => '<option value="'+s.id+'">'+esc(s.name)+' ('+(s.executions||0)+' runs)</option>').join('');
+    sel.innerHTML = ok.map(s => '<option value="'+s.id+'">'+esc(s.name)+' ('+(s.executions||0)+' runs)'+(prem && (s.executions||0)<500 ? ' · Premium' : '')+'</option>').join('');
     const first = ok[0];
     if (first && !document.getElementById('hubName').value) {
       document.getElementById('hubName').value = first.name || '';
     }
   } catch {}
 }
+
+async function loadAdmin(){
+  if (!currentUser || currentUser.role !== 'admin') { toast('Solo admin', 'err'); return; }
+  try {
+    const st = await fetch('/api/admin/stats', { headers: headers() }).then(r=>r.json());
+    document.getElementById('aUsers').textContent = st.users ?? '—';
+    document.getElementById('aScripts').textContent = st.scripts ?? '—';
+    document.getElementById('aHub').textContent = st.hub ?? '—';
+    document.getElementById('aPrem').textContent = st.premium ?? '—';
+  } catch {}
+  try {
+    const users = await fetch('/api/admin/users', { headers: headers() }).then(r=>r.json());
+    document.getElementById('adminUsers').innerHTML = (users||[]).map(u =>
+      '<tr><td>@'+esc(u.username)+'</td><td>'+esc(u.role)+'</td><td style="color:'+(u.premium?'#fbbf24':'#5a5a6e')+'">'+(u.premium?'Yes':'No')+'</td><td style="color:#5a5a6e">'+(u.createdAt?new Date(u.createdAt).toLocaleDateString():'-')+'</td></tr>'
+    ).join('') || '<tr><td colspan="4" class="text-center py-6" style="color:#5a5a6e">Sin usuarios</td></tr>';
+  } catch {}
+  loadAdminScripts();
+  try {
+    const hub = await fetch('/api/hub').then(r=>r.json());
+    document.getElementById('adminHub').innerHTML = (hub||[]).map(h => {
+      const id = h._id || h.id;
+      return '<tr><td>'+esc(h.name)+'</td><td>@'+esc(h.ownerUsername)+'</td><td>'+(h.views||0)+'</td><td><button class="btn-ghost text-xs" style="color:#f87171;border-color:#3a1a1a" onclick="adminDelHub(\''+id+'\')">Eliminar</button></td></tr>';
+    }).join('') || '<tr><td colspan="4" class="text-center py-6" style="color:#5a5a6e">Vacío</td></tr>';
+  } catch {}
+}
+
+async function loadAdminScripts(){
+  try {
+    const list = await fetch('/api/admin/scripts', { headers: headers() }).then(r=>r.json());
+    document.getElementById('adminScripts').innerHTML = (list||[]).map(s =>
+      '<tr><td>'+esc(s.name)+'</td><td style="color:#5a5a6e;font-size:11px">'+esc((s.ownerId||'').slice(0,8))+'…</td><td>'+(s.executions||0)+'</td><td><button class="btn-ghost text-xs" style="color:#f87171;border-color:#3a1a1a" onclick="adminDelScript(\''+s.id+'\')">Eliminar</button></td></tr>'
+    ).join('') || '<tr><td colspan="4" class="text-center py-6" style="color:#5a5a6e">Vacío</td></tr>';
+  } catch {}
+}
+
+async function adminSetPremium(on){
+  const username = document.getElementById('premUser').value.trim();
+  const days = document.getElementById('premDays').value || 30;
+  if (!username) { toast('Pon username', 'err'); return; }
+  try {
+    const r = await fetch('/api/admin/premium', {
+      method:'POST', headers: headers(),
+      body: JSON.stringify({ username, premium: on, days: Number(days) })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    toast(on ? ('Premium activado: @'+username) : ('Premium quitado: @'+username));
+    loadAdmin();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function adminDelScript(id){
+  if (!confirm('¿Eliminar este script del sistema?')) return;
+  try {
+    const r = await fetch('/api/admin/scripts/'+id, { method:'DELETE', headers: headers() });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Error');
+    toast('Script eliminado');
+    loadAdminScripts();
+  } catch(e) { toast(e.message,'err'); }
+}
+
+async function adminDelHub(id){
+  if (!confirm('¿Quitar del hub?')) return;
+  try {
+    const r = await fetch('/api/admin/hub/'+id, { method:'DELETE', headers: headers() });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Error');
+    toast('Quitado del hub');
+    loadAdmin();
+  } catch(e) { toast(e.message,'err'); }
+}
+
 
 async function publishHub(){
   const scriptId = document.getElementById('hubScriptSelect').value;
