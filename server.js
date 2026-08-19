@@ -573,8 +573,20 @@ app.get('/api/admin/stats', auth, needMongo, requireAdmin, async (req, res) => {
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Nunca devolver HTML en rutas /api/*
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Ruta no encontrada: ' + req.method + ' ' + req.path });
+});
+
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Errores no capturados -> JSON
+app.use((err, req, res, next) => {
+  console.error('Unhandled', err);
+  res.status(500).json({ error: err.message || 'Error interno' });
 });
 
 app.listen(PORT, () => {
