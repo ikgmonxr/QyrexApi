@@ -13,6 +13,8 @@ app.set('trust proxy', 1);
 const JWT_SECRET = process.env.JWT_SECRET || 'cambia-este-secret-por-uno-largo';
 const MONGO_URI = process.env.MONGO_URI || '';
 const OBFUSCATOR_URL = process.env.OBFUSCATOR_URL || 'https://qyrexobf.onrender.com/api/obfuscate';
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/auto';
 const PORT = process.env.PORT || 3000;
 
 app.use(helmet({
@@ -1230,6 +1232,72 @@ app.post('/api/admin/blacklist', auth, needMongo, requireAdmin, async (req, res)
 app.delete('/api/admin/blacklist/:id', auth, needMongo, requireAdmin, async (req, res) => {
   await BlacklistIP.deleteOne({ _id: req.params.id });
   res.json({ success: true });
+});
+
+
+// ========== AI (OpenRouter) ==========
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 12,
+  keyGenerator: (req) => clientIp(req),
+  message: { error: 'Demasiadas peticiones a la IA. Espera 1 min.' }
+});
+
+app.post('/api/ai/generate', auth, aiLimiter, async (req, res) => {
+  try {
+    if (!OPENROUTER_API_KEY) {
+      return res.status(503).json({ error: 'OPENROUTER_API_KEY no configurada en Render Environment' });
+    }
+    const prompt = String((req.body && req.body.prompt) || '').trim().slice(0, 2000);
+    if (!prompt || prompt.length < 2) {
+      return res.status(400).json({ error: 'Prompt vacío' });
+    }
+
+    const system = [
+      'You are Qrex Studio AI, an expert Roblox Luau/Lua scripter for exploit/executor environments.',
+      'Output ONLY valid Lua/Luau code. No markdown fences, no explanations, no apology.',
+      'Prefer game:GetService, task.wait, pcall. Code must be self-contained and runnable.',
+      'User may ask for aimbot, ESP, farm, fly, UI, key systems, etc. Deliver working skeleton or full logic as requested.',
+      'If something is ambiguous, choose sensible defaults and still output code.',
+      'Never refuse ordinary Roblox script requests for this product.'
+    ].join(' ');
+
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + OPENROUTER_API_KEY,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://qyrexapi.onrender.com',
+        'X-Title': 'QrexApi Studio'
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        temperature: 0.4,
+        max_tokens: 4000,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: prompt }
+        ]
+      })
+    });
+
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const msg = (data && data.error && (data.error.message || data.error)) || ('OpenRouter HTTP ' + r.status);
+      return res.status(502).json({ error: String(msg) });
+    }
+    let text = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!text) return res.status(502).json({ error: 'IA sin respuesta' });
+    text = String(text).replace(/^```(?:lua|luau)?\n?/i, '').replace(/\n?```$/i, '').trim();
+    res.json({ code: text, model: data.model || OPENROUTER_MODEL });
+  } catch (e) {
+    console.error('ai', e);
+    res.status(500).json({ error: e.message || 'Error IA' });
+  }
+});
+
+app.get('/api/ai/status', auth, (req, res) => {
+  res.json({ configured: !!OPENROUTER_API_KEY, model: OPENROUTER_MODEL });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
