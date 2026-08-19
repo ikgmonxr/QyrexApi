@@ -167,6 +167,7 @@ const Script = mongoose.models.QrexScript || mongoose.model('QrexScript', new mo
   keyMode: { type: String, default: 'keyless' }, // keyless | key
   providerId: { type: String, default: '' },
   providerName: { type: String, default: '' },
+  doObfuscate: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now }
 }));
 
@@ -491,13 +492,18 @@ app.post('/api/scripts', auth, needMongo, async (req, res) => {
       pid = String(prov._id);
     }
 
-    const obfuscated = await obfuscateWithQyrex(source);
+    const wantObf = req.body?.doObfuscate !== false && req.body?.doObfuscate !== 'false';
+    let outCode = source;
+    if (wantObf) {
+      outCode = await obfuscateWithQyrex(source);
+    }
     const doc = await Script.create({
       ownerId: req.user.sub,
       name,
       description: description || '',
       source,
-      obfuscated,
+      obfuscated: outCode,
+      doObfuscate: !!wantObf,
       keyMode: mode,
       providerId: pid,
       providerName
@@ -551,9 +557,23 @@ app.put('/api/scripts/:id', auth, needMongo, async (req, res) => {
         s.providerId = ''; s.providerName = '';
       }
     }
+    if (req.body?.doObfuscate !== undefined) {
+      s.doObfuscate = req.body.doObfuscate !== false && req.body.doObfuscate !== 'false';
+    }
     if (source) {
       s.source = source;
-      s.obfuscated = await obfuscateWithQyrex(source);
+      if (s.doObfuscate !== false) {
+        s.obfuscated = await obfuscateWithQyrex(source);
+      } else {
+        s.obfuscated = source;
+      }
+    } else if (req.body?.doObfuscate !== undefined && s.source) {
+      // re-process existing source with new setting
+      if (s.doObfuscate) {
+        s.obfuscated = await obfuscateWithQyrex(s.source);
+      } else {
+        s.obfuscated = s.source;
+      }
     }
     await s.save();
     res.json({ success: true, id: s.id });
