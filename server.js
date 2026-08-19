@@ -70,6 +70,18 @@ const Execution = mongoose.models.QrexExecution || mongoose.model('QrexExecution
   createdAt: { type: Date, default: Date.now }
 }));
 
+const HubScript = mongoose.models.QrexHubScript || mongoose.model('QrexHubScript', new mongoose.Schema({
+  name: { type: String, required: true },
+  description: { type: String, default: '' },
+  loadstring: { type: String, required: true },
+  scriptId: String,
+  ownerId: String,
+  ownerUsername: String,
+  executionsAtPublish: { type: Number, default: 0 },
+  views: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now }
+}));
+
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
@@ -359,6 +371,83 @@ app.get('/api/stats', auth, needMongo, async (req, res) => {
 app.get('/api/executions', auth, needMongo, async (req, res) => {
   const logs = await Execution.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).limit(100);
   res.json(logs);
+});
+
+
+// ========== HUB PÚBLICO ==========
+const HUB_MIN_EXECS = 500;
+
+app.get('/api/hub', async (req, res) => {
+  try {
+    if (!mongoReady && mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'DB offline' });
+    }
+    const list = await HubScript.find().sort({ createdAt: -1 }).limit(200).lean();
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
+
+app.post('/api/hub', auth, needMongo, async (req, res) => {
+  try {
+    const { scriptId, name, description } = req.body || {};
+    if (!scriptId) return res.status(400).json({ error: 'Selecciona un script' });
+
+    const s = await Script.findOne({ id: scriptId, ownerId: req.user.sub });
+    if (!s) return res.status(404).json({ error: 'Script no encontrado o no es tuyo' });
+
+    if ((s.executions || 0) < HUB_MIN_EXECS) {
+      return res.status(400).json({
+        error: `Necesitas al menos ${HUB_MIN_EXECS} ejecuciones. Tu script tiene ${s.executions || 0}.`
+      });
+    }
+
+    const exists = await HubScript.findOne({ scriptId: s.id });
+    if (exists) return res.status(400).json({ error: 'Este script ya está en el hub' });
+
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const loadstring = `loadstring(game:HttpGet("${proto}://${host}/api/raw/${s.id}"))()`;
+
+    const user = await User.findById(req.user.sub).lean();
+    const doc = await HubScript.create({
+      name: (name || s.name || 'Script').trim().slice(0, 80),
+      description: (description || s.description || '').trim().slice(0, 200),
+      loadstring,
+      scriptId: s.id,
+      ownerId: req.user.sub,
+      ownerUsername: (user && user.username) || req.user.username || 'user',
+      executionsAtPublish: s.executions || 0
+    });
+
+    res.json({
+      id: doc._id,
+      name: doc.name,
+      loadstring: doc.loadstring,
+      ownerUsername: doc.ownerUsername
+    });
+  } catch (e) {
+    console.error('hub publish', e);
+    res.status(500).json({ error: e.message || 'Error al publicar' });
+  }
+});
+
+app.post('/api/hub/:id/view', async (req, res) => {
+  try {
+    await HubScript.updateOne({ _id: req.params.id }, { $inc: { views: 1 } });
+    res.json({ ok: true });
+  } catch {
+    res.json({ ok: false });
+  }
+});
+
+app.delete('/api/hub/:id', auth, needMongo, async (req, res) => {
+  const doc = await HubScript.findById(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'No encontrado' });
+  if (doc.ownerId !== req.user.sub) return res.status(403).json({ error: 'No es tuyo' });
+  await HubScript.deleteOne({ _id: req.params.id });
+  res.json({ success: true });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
