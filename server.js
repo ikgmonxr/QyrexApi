@@ -47,8 +47,32 @@ mongoose.connection.on('error', (e) => { mongoReady = false; console.error('Mong
 const User = mongoose.models.QrexUser || mongoose.model('QrexUser', new mongoose.Schema({
   username: { type: String, unique: true, required: true, lowercase: true, trim: true },
   passwordHash: { type: String, required: true },
+  role: { type: String, default: 'user' }, // user | admin
+  premium: { type: Boolean, default: false },
+  premiumUntil: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now }
 }));
+
+function isPremiumUser(u) {
+  if (!u) return false;
+  if (u.role === 'admin') return true;
+  if (!u.premium) return false;
+  if (u.premiumUntil && new Date(u.premiumUntil) < new Date()) return false;
+  return true;
+}
+
+async function ensureOwnerAdmin() {
+  try {
+    const u = await User.findOne({ username: 'owner' });
+    if (u && u.role !== 'admin') {
+      u.role = 'admin';
+      u.premium = true;
+      await u.save();
+      console.log('OWNER promoted to admin');
+    }
+  } catch (e) {}
+}
+mongoose.connection.on('connected', () => { ensureOwnerAdmin(); });
 
 const Script = mongoose.models.QrexScript || mongoose.model('QrexScript', new mongoose.Schema({
   id: { type: String, default: () => crypto.randomBytes(12).toString('hex') },
@@ -172,15 +196,23 @@ app.post('/api/auth/register', needMongo, async (req, res) => {
       return res.status(400).json({ error: 'Ese usuario ya existe' });
     }
 
+    const isOwnerName = user === 'owner';
     const doc = await User.create({
       username: user,
-      passwordHash: hashPassword(pass)
+      passwordHash: hashPassword(pass),
+      role: isOwnerName ? 'admin' : 'user',
+      premium: isOwnerName ? true : false
     });
 
     const token = signToken(doc);
     res.json({
       token,
-      user: { id: doc._id, username: doc.username }
+      user: {
+        id: doc._id,
+        username: doc.username,
+        role: doc.role,
+        premium: isPremiumUser(doc)
+      }
     });
   } catch (e) {
     console.error('register', e);
@@ -206,10 +238,21 @@ app.post('/api/auth/login', needMongo, async (req, res) => {
       return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
     }
 
+    if (doc.username === 'owner' && doc.role !== 'admin') {
+      doc.role = 'admin';
+      doc.premium = true;
+      await doc.save();
+    }
+
     const token = signToken(doc);
     res.json({
       token,
-      user: { id: doc._id, username: doc.username }
+      user: {
+        id: doc._id,
+        username: doc.username,
+        role: doc.role || 'user',
+        premium: isPremiumUser(doc)
+      }
     });
   } catch (e) {
     console.error('login', e);
@@ -218,10 +261,28 @@ app.post('/api/auth/login', needMongo, async (req, res) => {
 });
 
 app.get('/api/me', auth, needMongo, async (req, res) => {
-  const user = await User.findById(req.user.sub).lean();
+  const user = await User.findById(req.user.sub);
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
-  res.json({ id: user._id, username: user.username });
+  if (user.username === 'owner' && user.role !== 'admin') {
+    user.role = 'admin';
+    user.premium = true;
+    await user.save();
+  }
+  res.json({
+    id: user._id,
+    username: user.username,
+    role: user.role || 'user',
+    premium: isPremiumUser(user)
+  });
 });
+
+function requireAdmin(req, res, next) {
+  User.findById(req.user.sub).then(u => {
+    if (!u || u.role !== 'admin') return res.status(403).json({ error: 'Solo admin' });
+    req.adminUser = u;
+    next();
+  }).catch(() => res.status(403).json({ error: 'Solo admin' }));
+}
 
 app.get('/api/scripts', auth, needMongo, async (req, res) => {
   const list = await Script.find({ ownerId: req.user.sub })
@@ -397,9 +458,11 @@ app.post('/api/hub', auth, needMongo, async (req, res) => {
     const s = await Script.findOne({ id: scriptId, ownerId: req.user.sub });
     if (!s) return res.status(404).json({ error: 'Script no encontrado o no es tuyo' });
 
-    if ((s.executions || 0) < HUB_MIN_EXECS) {
+    const me = await User.findById(req.user.sub);
+    const premium = isPremiumUser(me);
+    if (!premium && (s.executions || 0) < HUB_MIN_EXECS) {
       return res.status(400).json({
-        error: `Necesitas al menos ${HUB_MIN_EXECS} ejecuciones. Tu script tiene ${s.executions || 0}.`
+        error: `Necesitas al menos ${HUB_MIN_EXECS} ejecuciones (o Premium). Tu script tiene ${s.executions || 0}.`
       });
     }
 
@@ -448,6 +511,65 @@ app.delete('/api/hub/:id', auth, needMongo, async (req, res) => {
   if (doc.ownerId !== req.user.sub) return res.status(403).json({ error: 'No es tuyo' });
   await HubScript.deleteOne({ _id: req.params.id });
   res.json({ success: true });
+});
+
+
+// ========== ADMIN ==========
+app.get('/api/admin/users', auth, needMongo, requireAdmin, async (req, res) => {
+  const users = await User.find().select('-passwordHash').sort({ createdAt: -1 }).limit(200).lean();
+  res.json(users.map(u => ({
+    id: u._id,
+    username: u.username,
+    role: u.role || 'user',
+    premium: isPremiumUser(u),
+    premiumUntil: u.premiumUntil,
+    createdAt: u.createdAt
+  })));
+});
+
+app.post('/api/admin/premium', auth, needMongo, requireAdmin, async (req, res) => {
+  try {
+    const { username, premium, days } = req.body || {};
+    const u = await User.findOne({ username: (username || '').trim().toLowerCase() });
+    if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (u.username === 'owner') return res.status(400).json({ error: 'OWNER siempre es admin/premium' });
+    u.premium = !!premium;
+    if (premium && days) {
+      const d = new Date();
+      d.setDate(d.getDate() + Number(days));
+      u.premiumUntil = d;
+    } else if (!premium) {
+      u.premiumUntil = null;
+    }
+    await u.save();
+    res.json({ ok: true, username: u.username, premium: isPremiumUser(u), premiumUntil: u.premiumUntil });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
+
+app.get('/api/admin/scripts', auth, needMongo, requireAdmin, async (req, res) => {
+  const list = await Script.find().sort({ createdAt: -1 }).limit(300).select('-source -obfuscated').lean();
+  res.json(list);
+});
+
+app.delete('/api/admin/scripts/:id', auth, needMongo, requireAdmin, async (req, res) => {
+  await Script.deleteOne({ id: req.params.id });
+  await HubScript.deleteMany({ scriptId: req.params.id });
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/hub/:id', auth, needMongo, requireAdmin, async (req, res) => {
+  await HubScript.deleteOne({ _id: req.params.id });
+  res.json({ success: true });
+});
+
+app.get('/api/admin/stats', auth, needMongo, requireAdmin, async (req, res) => {
+  const users = await User.countDocuments();
+  const scripts = await Script.countDocuments();
+  const hub = await HubScript.countDocuments();
+  const premium = await User.countDocuments({ premium: true });
+  res.json({ users, scripts, hub, premium });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
