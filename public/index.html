@@ -704,7 +704,7 @@ local Players = game:GetService(&quot;Players&quot;)
           <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
             <div>
               <h1 class="text-2xl font-bold">Studio</h1>
-              <p class="text-xs mt-1" style="color:#5a5a6e">Editor libre · IA · no tapa el código</p>
+              <p class="text-xs mt-1" style="color:#5a5a6e">Editor libre · OpenRouter IA · números sin tapar código</p>
             </div>
             <div class="flex gap-2">
               <button class="btn-ghost text-sm" onclick="studioDownload2()">Download</button>
@@ -713,7 +713,7 @@ local Players = game:GetService(&quot;Players&quot;)
           </div>
           <div class="card p-4 mb-4 max-w-4xl">
             <div class="text-sm font-semibold mb-1">Generador</div>
-            <div class="text-xs mb-2" style="color:#5a5a6e">Ej: "hazme un aimbot", "esp", "auto farm", "speed", "fly", "ui"</div>
+            <div class="text-xs mb-2" style="color:#5a5a6e">IA real (OpenRouter). Ej: "aimbot con FOV 120", "ESP highlight", "auto farm de coins"</div>
             <div class="flex gap-2 flex-wrap mb-2">
               <input id="aiPrompt" class="flex-1 min-w-[180px]" placeholder="hazme un aimbot básico" onkeydown="if(event.key==='Enter')runAiGenerate()"/>
               <button class="btn-primary" onclick="runAiGenerate()">Generar</button>
@@ -1925,44 +1925,33 @@ function studioToCreate(){
   go('create');
   toast('Código enviado a Create Script');
 }
-function runAiGenerate(){
-  const q = (document.getElementById('aiPrompt')?.value || '').toLowerCase().trim();
+async function runAiGenerate(){
+  const input = document.getElementById('aiPrompt');
+  const q = (input?.value || '').trim();
   if (!q) { toast('Escribe un prompt', 'err'); return; }
-  let code = '-- Qrex Studio · ' + q + '\n\n';
-  if (/aimbot|aim/.test(q)) {
-    code += 'local Players = game:GetService("Players")\nlocal Camera = workspace.CurrentCamera\nlocal LP = Players.LocalPlayer\nlocal FOV = 120\nlocal function closest()\n  local best, bd = nil, FOV\n  for _, p in ipairs(Players:GetPlayers()) do\n    if p ~= LP and p.Character and p.Character:FindFirstChild("Head") then\n      local pos, vis = Camera:WorldToViewportPoint(p.Character.Head.Position)\n      if vis then\n        local d = (Vector2.new(pos.X, pos.Y) - Camera.ViewportSize/2).Magnitude\n        if d < bd then bd, best = d, p end\n      end\n    end\n  end\n  return best\nend\nprint("[Qrex] Aimbot skeleton — integra tu método de aim")\n';
-  } else if (/esp|chams/.test(q)) {
-    code += 'local Players = game:GetService("Players")\nlocal LP = Players.LocalPlayer\nlocal function esp(plr)\n  if plr == LP or not plr.Character then return end\n  local h = Instance.new("Highlight")\n  h.FillTransparency = 0.7\n  h.OutlineColor = Color3.fromRGB(167,139,250)\n  h.Parent = plr.Character\nend\nfor _, p in ipairs(Players:GetPlayers()) do esp(p) end\nPlayers.PlayerAdded:Connect(function(p) p.CharacterAdded:Connect(function() task.wait(0.5) esp(p) end) end)\nprint("[Qrex] ESP")\n';
-  } else if (/farm|autofarm/.test(q)) {
-    code += 'while task.wait(0.35) do\n  pcall(function()\n    -- farm logic\n  end)\nend\n';
-  } else if (/speed|walk/.test(q)) {
-    code += 'local LP = game:GetService("Players").LocalPlayer\nlocal function go()\n  local h = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")\n  if h then h.WalkSpeed = 50 end\nend\ngo()\nLP.CharacterAdded:Connect(function() task.wait(0.2) go() end)\n';
-  } else if (/fly/.test(q)) {
-    code += 'local LP = game:GetService("Players").LocalPlayer\nlocal char = LP.Character or LP.CharacterAdded:Wait()\nlocal hrp = char:WaitForChild("HumanoidRootPart")\nprint("[Qrex] Fly base — controla hrp con WASD")\n';
-  } else if (/jump/.test(q)) {
-    code += 'local UIS = game:GetService("UserInputService")\nlocal LP = game:GetService("Players").LocalPlayer\nUIS.JumpRequest:Connect(function()\n  local h = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")\n  if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end\nend)\n';
-  } else if (/ui|gui|menu/.test(q)) {
-    code += 'local sg = Instance.new("ScreenGui", game.CoreGui)\nlocal f = Instance.new("Frame", sg)\nf.Size = UDim2.fromOffset(320, 200)\nf.Position = UDim2.fromScale(0.5, 0.5)\nf.AnchorPoint = Vector2.new(0.5, 0.5)\nf.BackgroundColor3 = Color3.fromRGB(17,17,24)\nInstance.new("UICorner", f).CornerRadius = UDim.new(0, 12)\n';
-  } else if (/key/.test(q)) {
-    code += '-- Copia el loader desde Key System en el panel\nprint("[Qrex] Key loader")\n';
-  } else {
-    code += 'local Players = game:GetService("Players")\nlocal LP = Players.LocalPlayer\nprint("[Qrex] Base script")\n';
-  }
-  document.getElementById('studioSource').value = code;
+  const src = document.getElementById('studioSource');
+  if (!src) return;
+  const prev = src.value;
+  src.value = '-- Generando con IA...\n-- ' + q + '\n';
   updateStudioLines();
-  toast('Generado');
+  toast('IA pensando...');
+  try {
+    const r = await fetch('/api/ai/generate', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ prompt: q })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error IA');
+    src.value = d.code || prev;
+    updateStudioLines();
+    toast('Código generado' + (d.model ? ' · ' + d.model : ''));
+  } catch (e) {
+    src.value = prev;
+    updateStudioLines();
+    toast(e.message || 'Error IA', 'err');
+  }
 }
-(function(){
-  const box = document.getElementById('aiQuick');
-  if (!box) return;
-  ['aimbot','esp','auto farm','speed','fly','infinite jump','ui menu'].forEach(t => {
-    const b = document.createElement('button');
-    b.className = 'ai-chip';
-    b.textContent = t;
-    b.onclick = () => { document.getElementById('aiPrompt').value = 'hazme ' + t; runAiGenerate(); };
-    box.appendChild(b);
-  });
-})();
 
 function daysAgo(n){
   const d = new Date();
