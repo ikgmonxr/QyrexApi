@@ -189,6 +189,10 @@
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
           Create Script
         </button>
+        <button class="nav-item" data-page="studio" onclick="go('studio')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          Studio
+        </button>
         <button class="nav-item" data-page="executions" onclick="go('executions')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
           Analytics
@@ -420,12 +424,13 @@
                   <select id="sProvider"></select>
                 </div>
               </div>
-              <div class="flex flex-wrap items-center gap-4">
-                <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:#a0a0b0">
-                  <input type="checkbox" id="sObfuscate" checked style="width:auto;accent-color:#7c3aed"/>
-                  Ofuscar con QyrexObf
-                </label>
-                <span class="text-xs" style="color:#5a5a6e">Si lo desactivas se sirve el código plano, pero el raw sigue bloqueado en navegador (anti-tamper).</span>
+              <div>
+                <label class="field">Protección del código</label>
+                <select id="sObfMode">
+                  <option value="qrex">QyrexObf (online)</option>
+                  <option value="local">Local 5× XOR + Base64</option>
+                  <option value="none">Sin ofuscar (anti-tamper HTTP)</option>
+                </select>
               </div>
               <div class="text-xs" style="color:#5a5a6e">Gratis: máx 15 scripts · VIP: ilimitados</div>
 
@@ -694,6 +699,48 @@ local Players = game:GetService(&quot;Players&quot;)
           </div>
         </section>
 
+
+        <section id="page-studio" class="page hidden">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <div>
+              <h1 class="text-2xl font-bold">Studio</h1>
+              <p class="text-xs mt-1" style="color:#5a5a6e">Editor libre · IA · no tapa el código</p>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn-ghost text-sm" onclick="studioDownload2()">Download</button>
+              <button class="btn-primary text-sm" onclick="studioToCreate()">Usar en Create →</button>
+            </div>
+          </div>
+          <div class="card p-4 mb-4 max-w-4xl">
+            <div class="text-sm font-semibold mb-1">Generador</div>
+            <div class="text-xs mb-2" style="color:#5a5a6e">Ej: "hazme un aimbot", "esp", "auto farm", "speed", "fly", "ui"</div>
+            <div class="flex gap-2 flex-wrap mb-2">
+              <input id="aiPrompt" class="flex-1 min-w-[180px]" placeholder="hazme un aimbot básico" onkeydown="if(event.key==='Enter')runAiGenerate()"/>
+              <button class="btn-primary" onclick="runAiGenerate()">Generar</button>
+            </div>
+            <div class="flex flex-wrap gap-2" id="aiQuick"></div>
+          </div>
+          <div class="editor-wrap max-w-4xl" id="studioEditor2">
+            <div class="editor-header">
+              <div class="flex items-center gap-2 text-xs">
+                <span style="color:#8b8b9e">&lt;/&gt; Studio · Lua</span>
+                <span class="badge badge-green">Live</span>
+              </div>
+              <div class="studio-toolbar">
+                <button type="button" class="btn-ghost" onclick="studioComment2()">//</button>
+                <button type="button" class="btn-ghost" onclick="studioFormat2()">Format</button>
+                <label class="btn-ghost cursor-pointer">Upload<input type="file" accept=".lua,.txt" class="hidden" onchange="uploadStudio(this)"/></label>
+                <button type="button" class="btn-ghost" onclick="document.getElementById('studioSource').value='';updateStudioLines()">Clear</button>
+              </div>
+            </div>
+            <div class="editor-body">
+              <div class="line-nums" id="studioLineNums">1</div>
+              <textarea id="studioSource" placeholder="-- código libre aquí" oninput="updateStudioLines()" onscroll="document.getElementById('studioLineNums').scrollTop=this.scrollTop" onkeydown="studioKey2(event)" spellcheck="false"></textarea>
+            </div>
+            <div class="studio-status"><span id="studioPos2">Ln 1, Col 1</span><span id="studioStats2">0 líneas</span></div>
+          </div>
+        </section>
+
         <!-- SETTINGS -->
         <section id="page-settings" class="page hidden">
           <h1 class="text-2xl font-bold mb-6">Settings</h1>
@@ -870,7 +917,7 @@ window.onload = function(){
   updateLines();
 };
 
-const pageNames = { overview:'Overview', scripts:'Lua Scripts', hub:'Script Hub', keys:'Key System', webhooks:'Webhooks', leaderboard:'Leaderboard', assets:'My Assets', templates:'Templates', status:'System Status', playground:'API Playground', changelog:'Changelog', create:'Create Script', executions:'Analytics', apiinfo:'API Info', settings:'Settings', admin:'Admin Panel' };
+const pageNames = { overview:'Overview', scripts:'Lua Scripts', hub:'Script Hub', keys:'Key System', webhooks:'Webhooks', leaderboard:'Leaderboard', assets:'My Assets', templates:'Templates', status:'System Status', playground:'API Playground', changelog:'Changelog', create:'Create Script', studio:'Studio', executions:'Analytics', apiinfo:'API Info', settings:'Settings', admin:'Admin Panel' };
 
 function go(p){
   document.querySelectorAll('.page').forEach(x => x.classList.add('hidden'));
@@ -887,6 +934,7 @@ function go(p){
   if (p === 'assets') loadAssets();
   if (p === 'status') loadStatus();
   if (p === 'create') fillCreateProviders();
+  if (p === 'studio') { try { refreshAiChips(); updateLines(); } catch(e) {} }
   if (p === 'admin') loadAdmin();
   if (p === 'overview') { loadStats(); loadAnalytics(); }
   if (p === 'executions') loadAnalytics();
@@ -1097,7 +1145,7 @@ function renderScripts(list){
           '<div class="text-xs mt-0.5 truncate" style="color:#5a5a6e">'+esc(s.description||'Sin descripción')+'</div>'+
           '<div class="flex flex-wrap gap-2 mt-2">'+
             '<span class="chip">'+(s.executions||0)+' runs</span>'+
-            '<span class="chip">'+(s.doObfuscate===false?'Plain+AT':'Obfuscated')+'</span>'+
+            '<span class="chip">'+(s.obfMode==='local'?'XOR×5':(s.obfMode==='none'||s.doObfuscate===false)?'Plain+AT':'Qyrex')+'</span>'+
             (date ? '<span class="chip">'+esc(date)+'</span>' : '')+
             '<span class="chip" style="font-family:monospace;font-size:10px">'+esc((s.id||'').slice(0,10))+'…</span>'+
           '</div>'+
@@ -1146,8 +1194,8 @@ async function editScript(id){
     document.getElementById('sName').value = s.name || '';
     document.getElementById('sDesc').value = s.description || '';
     document.getElementById('sSource').value = s.source || '';
-    const ob = document.getElementById('sObfuscate');
-    if (ob) ob.checked = s.doObfuscate !== false;
+    const om = document.getElementById('sObfMode');
+    if (om) om.value = s.obfMode || (s.doObfuscate === false ? 'none' : 'qrex');
     document.getElementById('createTitle').textContent = 'Edit Script';
     document.getElementById('createSubtitle').textContent = 'Modificando · ' + (s.name || id);
     document.getElementById('createBtnLabel').textContent = 'Save changes';
@@ -1170,7 +1218,7 @@ function resetCreateForm(){
   document.getElementById('createSubtitle').textContent = 'Create or modify Lua script';
   document.getElementById('createBtnLabel').textContent = 'Create';
   document.getElementById('createOutWrap').classList.add('hidden');
-  const ob2 = document.getElementById('sObfuscate'); if (ob2) ob2.checked = true;
+  const om2 = document.getElementById('sObfMode'); if (om2) om2.value = 'qrex';
   updateLines();
 }
 
@@ -1191,7 +1239,7 @@ async function createScript(){
     if (editId) {
       r = await fetch('/api/scripts/' + editId, {
         method: 'PUT', headers: headers(),
-        body: JSON.stringify({ name, description, source, doObfuscate: !!(document.getElementById('sObfuscate')&&document.getElementById('sObfuscate').checked), keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
+        body: JSON.stringify({ name, description, source, obfMode: (document.getElementById('sObfMode')||{}).value || 'qrex', keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
       });
       d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Error al guardar');
@@ -1207,7 +1255,7 @@ async function createScript(){
     } else {
       r = await fetch('/api/scripts', {
         method:'POST', headers: headers(),
-        body: JSON.stringify({ name, description, source, doObfuscate: !!(document.getElementById('sObfuscate')&&document.getElementById('sObfuscate').checked), keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
+        body: JSON.stringify({ name, description, source, obfMode: (document.getElementById('sObfMode')||{}).value || 'qrex', keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
       });
       d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Error');
@@ -1799,6 +1847,123 @@ async function showVersions(scriptId){
     loadScripts();
   } catch(e){ toast(e.message,'err'); }
 }
+
+function updateStudioLines(){
+  const src = document.getElementById('studioSource');
+  const nums = document.getElementById('studioLineNums');
+  if (!src || !nums) return;
+  const n = Math.max(1, src.value.split('\n').length);
+  let o = '';
+  for (let i=1;i<=n;i++) o += i + '\n';
+  nums.textContent = o;
+  nums.scrollTop = src.scrollTop;
+  const st = document.getElementById('studioStats2');
+  if (st) st.textContent = n + ' líneas · ' + src.value.length + ' chars';
+  const off = src.selectionStart || 0;
+  const before = src.value.slice(0, off);
+  const ln = before.split('\n').length;
+  const col = before.length - before.lastIndexOf('\n');
+  const pos = document.getElementById('studioPos2');
+  if (pos) pos.textContent = 'Ln ' + ln + ', Col ' + col;
+}
+function studioKey2(e){
+  const src = document.getElementById('studioSource');
+  if (!src) return;
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const s = src.selectionStart;
+    src.value = src.value.slice(0,s) + '  ' + src.value.slice(src.selectionEnd);
+    src.selectionStart = src.selectionEnd = s + 2;
+    updateStudioLines();
+  }
+  setTimeout(updateStudioLines, 0);
+}
+function studioComment2(){
+  const src = document.getElementById('studioSource');
+  if (!src) return;
+  const lineStart = src.value.lastIndexOf('\n', (src.selectionStart||0)-1) + 1;
+  src.value = src.value.slice(0,lineStart) + '-- ' + src.value.slice(lineStart);
+  updateStudioLines();
+}
+function studioFormat2(){
+  const src = document.getElementById('studioSource');
+  if (!src) return;
+  let ind = 0;
+  const openers = /\b(function|then|do|repeat)\b/;
+  const closers = /\b(end|until|else|elseif)\b/;
+  src.value = src.value.split('\n').map(line => {
+    const t = line.trim();
+    if (!t) return '';
+    if (closers.test(t) && !/\bthen\b/.test(t)) ind = Math.max(0, ind-1);
+    const r = '  '.repeat(ind) + t;
+    if (openers.test(t) && !t.includes('end')) ind++;
+    return r;
+  }).join('\n');
+  updateStudioLines();
+  toast('Formato OK');
+}
+function studioDownload2(){
+  const src = document.getElementById('studioSource');
+  const blob = new Blob([src.value], {type:'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'studio.lua';
+  a.click();
+}
+function uploadStudio(input){
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { document.getElementById('studioSource').value = r.result; updateStudioLines(); };
+  r.readAsText(f);
+  input.value = '';
+}
+function studioToCreate(){
+  const code = document.getElementById('studioSource').value;
+  resetCreateForm();
+  document.getElementById('sSource').value = code;
+  go('create');
+  toast('Código enviado a Create Script');
+}
+function runAiGenerate(){
+  const q = (document.getElementById('aiPrompt')?.value || '').toLowerCase().trim();
+  if (!q) { toast('Escribe un prompt', 'err'); return; }
+  let code = '-- Qrex Studio · ' + q + '\n\n';
+  if (/aimbot|aim/.test(q)) {
+    code += 'local Players = game:GetService("Players")\nlocal Camera = workspace.CurrentCamera\nlocal LP = Players.LocalPlayer\nlocal FOV = 120\nlocal function closest()\n  local best, bd = nil, FOV\n  for _, p in ipairs(Players:GetPlayers()) do\n    if p ~= LP and p.Character and p.Character:FindFirstChild("Head") then\n      local pos, vis = Camera:WorldToViewportPoint(p.Character.Head.Position)\n      if vis then\n        local d = (Vector2.new(pos.X, pos.Y) - Camera.ViewportSize/2).Magnitude\n        if d < bd then bd, best = d, p end\n      end\n    end\n  end\n  return best\nend\nprint("[Qrex] Aimbot skeleton — integra tu método de aim")\n';
+  } else if (/esp|chams/.test(q)) {
+    code += 'local Players = game:GetService("Players")\nlocal LP = Players.LocalPlayer\nlocal function esp(plr)\n  if plr == LP or not plr.Character then return end\n  local h = Instance.new("Highlight")\n  h.FillTransparency = 0.7\n  h.OutlineColor = Color3.fromRGB(167,139,250)\n  h.Parent = plr.Character\nend\nfor _, p in ipairs(Players:GetPlayers()) do esp(p) end\nPlayers.PlayerAdded:Connect(function(p) p.CharacterAdded:Connect(function() task.wait(0.5) esp(p) end) end)\nprint("[Qrex] ESP")\n';
+  } else if (/farm|autofarm/.test(q)) {
+    code += 'while task.wait(0.35) do\n  pcall(function()\n    -- farm logic\n  end)\nend\n';
+  } else if (/speed|walk/.test(q)) {
+    code += 'local LP = game:GetService("Players").LocalPlayer\nlocal function go()\n  local h = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")\n  if h then h.WalkSpeed = 50 end\nend\ngo()\nLP.CharacterAdded:Connect(function() task.wait(0.2) go() end)\n';
+  } else if (/fly/.test(q)) {
+    code += 'local LP = game:GetService("Players").LocalPlayer\nlocal char = LP.Character or LP.CharacterAdded:Wait()\nlocal hrp = char:WaitForChild("HumanoidRootPart")\nprint("[Qrex] Fly base — controla hrp con WASD")\n';
+  } else if (/jump/.test(q)) {
+    code += 'local UIS = game:GetService("UserInputService")\nlocal LP = game:GetService("Players").LocalPlayer\nUIS.JumpRequest:Connect(function()\n  local h = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")\n  if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end\nend)\n';
+  } else if (/ui|gui|menu/.test(q)) {
+    code += 'local sg = Instance.new("ScreenGui", game.CoreGui)\nlocal f = Instance.new("Frame", sg)\nf.Size = UDim2.fromOffset(320, 200)\nf.Position = UDim2.fromScale(0.5, 0.5)\nf.AnchorPoint = Vector2.new(0.5, 0.5)\nf.BackgroundColor3 = Color3.fromRGB(17,17,24)\nInstance.new("UICorner", f).CornerRadius = UDim.new(0, 12)\n';
+  } else if (/key/.test(q)) {
+    code += '-- Copia el loader desde Key System en el panel\nprint("[Qrex] Key loader")\n';
+  } else {
+    code += 'local Players = game:GetService("Players")\nlocal LP = Players.LocalPlayer\nprint("[Qrex] Base script")\n';
+  }
+  document.getElementById('studioSource').value = code;
+  updateStudioLines();
+  toast('Generado');
+}
+(function(){
+  const box = document.getElementById('aiQuick');
+  if (!box) return;
+  ['aimbot','esp','auto farm','speed','fly','infinite jump','ui menu'].forEach(t => {
+    const b = document.createElement('button');
+    b.className = 'ai-chip';
+    b.textContent = t;
+    b.onclick = () => { document.getElementById('aiPrompt').value = 'hazme ' + t; runAiGenerate(); };
+    box.appendChild(b);
+  });
+})();
+
 function daysAgo(n){
   const d = new Date();
   d.setHours(0,0,0,0);
