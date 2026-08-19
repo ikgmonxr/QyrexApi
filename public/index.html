@@ -70,10 +70,17 @@
   .tab-bar button{flex:1;padding:10px;font-size:13px;font-weight:600;border:none;background:transparent;color:#6b6b80;cursor:pointer}
   .tab-bar button.active{background:#1a1428;color:#a78bfa}
   .hint-green{background:#0d1f14;border:1px solid #1a3a28;color:#34d399;border-radius:10px;padding:10px 14px;font-size:12px}
-  .editor-wrap{border:1px solid #252533;border-radius:12px;overflow:hidden;background:#0c0c12}
-  .editor-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #1e1e2a}
-  .line-nums{color:#3a3a4a;font-family:ui-monospace,monospace;font-size:12px;padding:12px 8px 12px 12px;user-select:none;text-align:right;line-height:1.6;min-width:36px}
-  #sSource{border:none;border-radius:0;background:transparent;font-family:ui-monospace,monospace;font-size:13px;line-height:1.6;resize:none;padding:12px 12px 12px 0}
+  .editor-wrap{border:1px solid #252533;border-radius:12px;overflow:hidden;background:#0c0c12;display:flex;flex-direction:column}
+  .editor-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #1e1e2a;flex-wrap:wrap;gap:8px}
+  .editor-body{display:flex;flex:1;min-height:320px;max-height:520px;overflow:hidden;position:relative}
+  .line-nums{color:#4a4a5a;font-family:ui-monospace,Consolas,monospace;font-size:13px;padding:12px 10px 12px 12px;user-select:none;text-align:right;line-height:1.55;min-width:48px;width:48px;flex-shrink:0;overflow:hidden;background:#0a0a10;border-right:1px solid #1a1a24;white-space:pre;box-sizing:border-box}
+  #sSource{border:none;border-radius:0;background:#0c0c12;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.55;resize:none;padding:12px 14px;flex:1;min-width:0;overflow:auto;white-space:pre;tab-size:2;color:#e4e4ed}
+  .studio-toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .studio-toolbar .btn-ghost{padding:5px 10px;font-size:11px}
+  .ai-panel{border-top:1px solid #1e1e2a;background:#0a0a10;padding:10px 12px;max-height:140px;overflow:auto}
+  .ai-chip{display:inline-block;margin:3px;padding:5px 10px;border-radius:8px;border:1px solid #2a2a3a;background:#12121a;color:#c4b5fd;font-size:11px;cursor:pointer;transition:all .15s}
+  .ai-chip:hover{border-color:#7c3aed;background:#1a1428}
+  .studio-status{font-size:11px;color:#5a5a6e;padding:6px 12px;border-top:1px solid #1a1a24;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
   label.field{font-size:12px;font-weight:500;color:#8b8b9e;margin-bottom:6px;display:block}
   label.field .req{color:#f87171}
   ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#2a2a3a;border-radius:3px}
@@ -435,20 +442,41 @@
                 This is your script. It gets obfuscated before it reaches users — paste your source here.
               </div>
 
-              <div class="editor-wrap">
+              <div class="editor-wrap" id="studioEditor">
                 <div class="editor-header">
                   <div class="flex items-center gap-2 text-xs">
-                    <span style="color:#8b8b9e">&lt;/&gt; Script</span>
+                    <span style="color:#8b8b9e">&lt;/&gt; Studio · Lua</span>
                     <span class="badge badge-green">Protected</span>
+                    <span class="badge" id="studioLang">Lua 5.1</span>
                   </div>
-                  <label class="btn-ghost cursor-pointer text-xs" style="padding:5px 10px">
-                    Upload
-                    <input type="file" accept=".lua,.txt" class="hidden" onchange="uploadFile(this)"/>
-                  </label>
+                  <div class="studio-toolbar">
+                    <button type="button" class="btn-ghost" onclick="studioInsertTab()" title="Tab">Tab</button>
+                    <button type="button" class="btn-ghost" onclick="studioComment()" title="Comentar">//</button>
+                    <button type="button" class="btn-ghost" onclick="studioFormat()" title="Indentar">Format</button>
+                    <button type="button" class="btn-ghost" onclick="studioDownload()" title="Descargar .lua">Download</button>
+                    <label class="btn-ghost cursor-pointer" style="padding:5px 10px">
+                      Upload
+                      <input type="file" accept=".lua,.txt" class="hidden" onchange="uploadFile(this)"/>
+                    </label>
+                    <button type="button" class="btn-ghost" onclick="studioClear()" title="Limpiar">Clear</button>
+                    <button type="button" class="btn-ghost" onclick="studioToggleAi()">AI Tips</button>
+                  </div>
                 </div>
-                <div class="flex">
+                <div class="editor-body">
                   <div class="line-nums" id="lineNums">1</div>
-                  <textarea id="sSource" class="flex-1 h-72" placeholder="-- paste your Lua here" oninput="updateLines()"></textarea>
+                  <textarea id="sSource" placeholder="-- Escribe tu Lua aquí (Studio)
+-- Los números de línea están a la izquierda y no tapan el código
+local Players = game:GetService(&quot;Players&quot;)
+" oninput="onStudioInput()" onscroll="syncStudioScroll()" onkeydown="studioKey(event)" spellcheck="false"></textarea>
+                </div>
+                <div class="ai-panel" id="aiPanel">
+                  <div class="text-xs mb-1" style="color:#6b6b80">Sugerencias rápidas (clic para insertar)</div>
+                  <div id="aiChips"></div>
+                </div>
+                <div class="studio-status">
+                  <span id="studioPos">Ln 1, Col 1</span>
+                  <span id="studioStats">0 líneas · 0 chars</span>
+                  <span>UTF-8 · Spaces: 2</span>
                 </div>
               </div>
 
@@ -832,6 +860,8 @@ document.addEventListener('keydown', e => {
 });
 
 window.onload = function(){
+  try { refreshAiChips(); updateLines(); } catch(e) {}
+
   if (token) {
     fetch('/api/me', { headers: headers() })
       .then(r => r.ok ? r.json() : Promise.reject())
@@ -866,11 +896,151 @@ function esc(t){ const d=document.createElement('div'); d.textContent=t||''; ret
 
 function updateLines(){
   const src = document.getElementById('sSource');
+  const nums = document.getElementById('lineNums');
+  if (!src || !nums) return;
+  const lines = src.value.split('\n');
+  const n = Math.max(1, lines.length);
+  let out = '';
+  for (let i = 1; i <= n; i++) out += i + '\n';
+  nums.textContent = out;
+  // keep heights in sync via scroll only; same line-height
+  nums.scrollTop = src.scrollTop;
+  const pos = document.getElementById('studioPos');
+  const st = document.getElementById('studioStats');
+  if (st) st.textContent = n + ' líneas · ' + src.value.length + ' chars';
+  if (pos) {
+    const off = src.selectionStart || 0;
+    const before = src.value.slice(0, off);
+    const ln = before.split('\n').length;
+    const col = before.length - before.lastIndexOf('\n');
+    pos.textContent = 'Ln ' + ln + ', Col ' + col;
+  }
+}
+function onStudioInput(){ updateLines(); refreshAiChips(); }
+function syncStudioScroll(){
+  const src = document.getElementById('sSource');
+  const nums = document.getElementById('lineNums');
+  if (src && nums) nums.scrollTop = src.scrollTop;
+}
+function studioKey(e){
+  const src = document.getElementById('sSource');
   if (!src) return;
-  const n = Math.max(1, src.value.split('\n').length);
-  let html = '';
-  for (let i=1;i<=n;i++) html += i + '\n';
-  document.getElementById('lineNums').textContent = html;
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const s = src.selectionStart, en = src.selectionEnd;
+    src.value = src.value.slice(0,s) + '  ' + src.value.slice(en);
+    src.selectionStart = src.selectionEnd = s + 2;
+    updateLines();
+  }
+  if (e.key === '/' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    studioComment();
+  }
+  if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    toast('Usa Create/Save para guardar en la nube');
+  }
+  setTimeout(updateLines, 0);
+}
+function studioInsertTab(){
+  const src = document.getElementById('sSource');
+  if (!src) return;
+  const s = src.selectionStart;
+  src.value = src.value.slice(0,s) + '  ' + src.value.slice(src.selectionEnd);
+  src.selectionStart = src.selectionEnd = s + 2;
+  src.focus(); updateLines();
+}
+function studioComment(){
+  const src = document.getElementById('sSource');
+  if (!src) return;
+  const s = src.selectionStart, en = src.selectionEnd;
+  let a = src.value.slice(0,s), mid = src.value.slice(s,en), b = src.value.slice(en);
+  if (!mid) {
+    // comment current line
+    const lineStart = src.value.lastIndexOf('\n', s-1) + 1;
+    src.value = src.value.slice(0,lineStart) + '-- ' + src.value.slice(lineStart);
+  } else {
+    mid = mid.split('\n').map(l => l.startsWith('--') ? l.replace(/^--\s?/,'') : '-- '+l).join('\n');
+    src.value = a + mid + b;
+  }
+  src.focus(); updateLines();
+}
+function studioFormat(){
+  const src = document.getElementById('sSource');
+  if (!src) return;
+  // simple indent by keywords
+  const lines = src.value.split('\n');
+  let ind = 0;
+  const openers = /\b(function|then|do|repeat)\b/;
+  const closers = /\b(end|until|else|elseif)\b/;
+  const out = lines.map(line => {
+    const t = line.trim();
+    if (!t) return '';
+    if (closers.test(t) && !/\bthen\b/.test(t) && !/\bfunction\b/.test(t)) ind = Math.max(0, ind-1);
+    const r = '  '.repeat(ind) + t;
+    if (openers.test(t) && !t.includes('end')) ind++;
+    if (/\belse\b/.test(t) || /\belseif\b/.test(t)) { /* keep */ }
+    return r;
+  });
+  src.value = out.join('\n');
+  updateLines();
+  toast('Formato aplicado');
+}
+function studioDownload(){
+  const src = document.getElementById('sSource');
+  const name = (document.getElementById('sName')?.value || 'script').replace(/[^\\w.-]+/g,'_');
+  const blob = new Blob([src.value], {type:'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name + '.lua';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('Descargado ' + name + '.lua');
+}
+function studioClear(){
+  if (!confirm('¿Limpiar editor?')) return;
+  document.getElementById('sSource').value = '';
+  updateLines();
+}
+function studioToggleAi(){
+  const p = document.getElementById('aiPanel');
+  if (p) p.style.display = p.style.display === 'none' ? '' : 'none';
+}
+const AI_SUGGESTIONS = [
+  { t: 'GetService Players', c: 'local Players = game:GetService("Players")\nlocal LocalPlayer = Players.LocalPlayer\n' },
+  { t: 'Tween', c: 'local TweenService = game:GetService("TweenService")\nTweenService:Create(part, TweenInfo.new(0.3), {Transparency = 1}):Play()\n' },
+  { t: 'HttpGet', c: 'local data = game:HttpGet("https://example.com")\nprint(data)\n' },
+  { t: 'pcall safe', c: 'local ok, err = pcall(function()\n  -- code\nend)\nif not ok then warn(err) end\n' },
+  { t: 'Notify', c: 'game:GetService("StarterGui"):SetCore("SendNotification", {Title = "Qrex", Text = "Hola", Duration = 3})\n' },
+  { t: 'Loop wait', c: 'while task.wait(1) do\n  -- loop\nend\n' },
+  { t: 'Remote fire', c: 'local re = game:GetService("ReplicatedStorage"):WaitForChild("Remote")\nre:FireServer()\n' },
+  { t: 'Character', c: 'local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()\nlocal hum = char:WaitForChild("Humanoid")\n' },
+  { t: 'UI ScreenGui', c: 'local sg = Instance.new("ScreenGui")\nsg.Parent = game.CoreGui\nlocal f = Instance.new("Frame", sg)\nf.Size = UDim2.fromOffset(300, 200)\n' },
+  { t: 'Qrex Key verify', c: '-- Ver key (ajusta provider)\n-- usa el loader del Key System\n' },
+];
+function refreshAiChips(){
+  const box = document.getElementById('aiChips');
+  if (!box) return;
+  const src = (document.getElementById('sSource')?.value || '').toLowerCase();
+  let list = AI_SUGGESTIONS;
+  if (src.includes('player')) list = AI_SUGGESTIONS.filter(x => /player|character|humanoid|notify/i.test(x.t+x.c)).concat(AI_SUGGESTIONS);
+  const seen = new Set();
+  box.innerHTML = list.filter(x => { if(seen.has(x.t)) return false; seen.add(x.t); return true; }).slice(0,10).map((x,i) =>
+    '<span class="ai-chip" onclick="insertAi('+i+')">'+x.t+'</span>'
+  ).join('');
+  window.__aiList = list.filter((x,i,a)=>a.findIndex(y=>y.t===x.t)===i).slice(0,10);
+}
+function insertAi(i){
+  const list = window.__aiList || AI_SUGGESTIONS;
+  const item = list[i];
+  if (!item) return;
+  const src = document.getElementById('sSource');
+  const s = src.selectionStart || src.value.length;
+  const code = item.c;
+  src.value = src.value.slice(0, s) + code + src.value.slice(src.selectionEnd || s);
+  src.focus();
+  updateLines();
+  toast('Insertado: ' + item.t);
 }
 
 function uploadFile(input){
