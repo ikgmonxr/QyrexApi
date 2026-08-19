@@ -24,8 +24,10 @@ app.use(async (req, res, next) => {
   try {
     if (!req.path.startsWith('/api')) return next();
     const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
-    if (!ip || !mongoReady && mongoose.connection.readyState !== 1) return next();
-    const banned = await BlacklistIP.findOne({ ip }).lean();
+    if (!ip || mongoose.connection.readyState !== 1) return next();
+    const Model = mongoose.models.QrexBlacklistIP;
+    if (!Model) return next();
+    const banned = await Model.findOne({ ip }).lean();
     if (banned) return res.status(403).json({ error: 'IP bloqueada' });
     next();
   } catch { next(); }
