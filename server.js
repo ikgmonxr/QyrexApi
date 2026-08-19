@@ -212,7 +212,81 @@ const BlacklistIP = mongoose.models.QrexBlacklistIP || mongoose.model('QrexBlack
   createdAt: { type: Date, default: Date.now }
 }));
 
+
+const CloudUI = mongoose.models.QrexCloudUI || mongoose.model('QrexCloudUI', new mongoose.Schema({
+  id: { type: String, default: () => crypto.randomBytes(8).toString('hex') },
+  ownerId: String,
+  name: String,
+  description: { type: String, default: '' },
+  code: String, // Lua UI module source
+  public: { type: Boolean, default: true },
+  downloads: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const RemoteAlert = mongoose.models.QrexRemoteAlert || mongoose.model('QrexRemoteAlert', new mongoose.Schema({
+  ownerId: String,
+  scriptId: { type: String, default: '*' }, // * = all owner scripts
+  message: String,
+  title: { type: String, default: 'Alert' },
+  active: { type: Boolean, default: true },
+  expiresAt: { type: Date, default: null },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const PromoCode = mongoose.models.QrexPromoCode || mongoose.model('QrexPromoCode', new mongoose.Schema({
+  code: { type: String, unique: true, uppercase: true },
+  ownerId: String,
+  providerId: String,
+  extraHours: { type: Number, default: 24 },
+  maxUses: { type: Number, default: 100 },
+  uses: { type: Number, default: 0 },
+  enabled: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const BugReport = mongoose.models.QrexBugReport || mongoose.model('QrexBugReport', new mongoose.Schema({
+  ownerId: String, // script owner
+  scriptId: String,
+  fromUser: { type: String, default: 'anonymous' },
+  message: String,
+  meta: { type: String, default: '' },
+  status: { type: String, default: 'open' }, // open | done
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const Telemetry = mongoose.models.QrexTelemetry || mongoose.model('QrexTelemetry', new mongoose.Schema({
+  ownerId: String,
+  event: String,
+  ip: String,
+  detail: String,
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const EndpointRoute = mongoose.models.QrexEndpointRoute || mongoose.model('QrexEndpointRoute', new mongoose.Schema({
+  ownerId: String,
+  slug: { type: String, unique: true },
+  target: { type: String, default: 'raw' }, // raw
+  scriptId: String,
+  enabled: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now }
+}));
+
 const FREE_SCRIPT_LIMIT = 15;
+
+async function logTelemetry(ownerId, event, ip, detail) {
+  try {
+    if (!ownerId || mongoose.connection.readyState !== 1) return;
+    await Telemetry.create({
+      ownerId: String(ownerId),
+      event: String(event || 'event').slice(0, 80),
+      ip: String(ip || '').slice(0, 80),
+      detail: String(detail || '').slice(0, 400)
+    });
+    // keep last ~500 per owner roughly by occasional cleanup
+  } catch {}
+}
+
 
 async function fireWebhooks(ownerId, event, payload) {
   try {
@@ -756,6 +830,7 @@ app.get('/api/raw/:id', rawBurstLimiter, rawLimiter, async (req, res) => {
   });
 
   fireWebhooks(s.ownerId, 'script_exec', { scriptId: s.id, name: s.name, ip: String(ip).split(',')[0] });
+  logTelemetry(s.ownerId, 'script_exec', String(ip).split(',')[0], s.name + ' ' + s.id);
 
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -1059,6 +1134,7 @@ app.post('/api/keys/verify', verifyLimiter, needMongo, async (req, res) => {
     doc.lastUsedAt = new Date();
     await doc.save();
 
+    logTelemetry(doc.ownerId, 'key_verify', clientIp(req), (doc.providerName || '') + ' key');
     fireWebhooks(doc.ownerId, 'key_verify', {
       key: kstr.slice(0, 8) + '...',
       provider: doc.providerName,
@@ -1298,6 +1374,311 @@ app.post('/api/ai/generate', auth, aiLimiter, async (req, res) => {
 
 app.get('/api/ai/status', auth, (req, res) => {
   res.json({ configured: !!OPENROUTER_API_KEY, model: OPENROUTER_MODEL });
+});
+
+
+// ========== CLOUD UI ==========
+app.get('/api/cloud-ui', auth, needMongo, async (req, res) => {
+  res.json(await CloudUI.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).limit(100));
+});
+
+app.post('/api/cloud-ui', auth, needMongo, async (req, res) => {
+  const { name, description, code, public: isPublic } = req.body || {};
+  if (!name || !code) return res.status(400).json({ error: 'name y code requeridos' });
+  const doc = await CloudUI.create({
+    ownerId: req.user.sub,
+    name: String(name).slice(0, 80),
+    description: String(description || '').slice(0, 200),
+    code: String(code).slice(0, 200000),
+    public: isPublic !== false
+  });
+  res.json(doc);
+});
+
+app.delete('/api/cloud-ui/:id', auth, needMongo, async (req, res) => {
+  await CloudUI.deleteOne({ id: req.params.id, ownerId: req.user.sub });
+  res.json({ success: true });
+});
+
+// Public fetch for Roblox: load UI by id
+app.get('/api/cloud-ui/raw/:id', rawBurstLimiter, rawLimiter, async (req, res) => {
+  try {
+    if (mongoose.connection.readyState !== 1) return res.status(503).type('text/plain').send('-- offline');
+    const doc = await CloudUI.findOne({ id: req.params.id });
+    if (!doc || doc.public === false) return res.status(404).type('text/plain').send('-- not found');
+    doc.downloads = (doc.downloads || 0) + 1;
+    await doc.save();
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('text/plain').send(doc.code);
+  } catch (e) {
+    res.status(500).type('text/plain').send('-- error');
+  }
+});
+
+// ========== REMOTE ALERTS ==========
+app.get('/api/alerts', auth, needMongo, async (req, res) => {
+  res.json(await RemoteAlert.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).limit(50));
+});
+
+app.post('/api/alerts', auth, needMongo, async (req, res) => {
+  const { message, title, scriptId, hours } = req.body || {};
+  if (!message) return res.status(400).json({ error: 'message requerido' });
+  let expiresAt = null;
+  if (hours) {
+    expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + Number(hours));
+  }
+  const doc = await RemoteAlert.create({
+    ownerId: req.user.sub,
+    scriptId: scriptId || '*',
+    message: String(message).slice(0, 500),
+    title: String(title || 'Alert').slice(0, 80),
+    expiresAt
+  });
+  res.json(doc);
+});
+
+app.delete('/api/alerts/:id', auth, needMongo, async (req, res) => {
+  await RemoteAlert.deleteOne({ _id: req.params.id, ownerId: req.user.sub });
+  res.json({ success: true });
+});
+
+// Poll from scripts
+app.get('/api/alerts/poll', needMongo, async (req, res) => {
+  const ownerId = req.query.owner;
+  const scriptId = req.query.script || '*';
+  if (!ownerId) return res.status(400).json({ error: 'owner required' });
+  const now = new Date();
+  const list = await RemoteAlert.find({
+    ownerId,
+    active: true,
+    $or: [{ scriptId: '*' }, { scriptId }],
+    $and: [{ $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }] }]
+  }).sort({ createdAt: -1 }).limit(5).lean();
+  res.json(list.map(a => ({ title: a.title, message: a.message, id: a._id, createdAt: a.createdAt })));
+});
+
+// ========== PROMO CODES ==========
+app.get('/api/promos', auth, needMongo, async (req, res) => {
+  res.json(await PromoCode.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }));
+});
+
+app.post('/api/promos', auth, needMongo, async (req, res) => {
+  const { code, providerId, extraHours, maxUses } = req.body || {};
+  const c = String(code || '').trim().toUpperCase();
+  if (!c || c.length < 3) return res.status(400).json({ error: 'Código inválido' });
+  try {
+    const doc = await PromoCode.create({
+      code: c,
+      ownerId: req.user.sub,
+      providerId: providerId || '',
+      extraHours: Math.max(1, Number(extraHours) || 24),
+      maxUses: Math.max(1, Number(maxUses) || 100)
+    });
+    res.json(doc);
+  } catch (e) {
+    res.status(400).json({ error: 'Código ya existe' });
+  }
+});
+
+app.post('/api/promos/redeem', needMongo, async (req, res) => {
+  try {
+    const { code, key } = req.body || {};
+    const promo = await PromoCode.findOne({ code: String(code || '').trim().toUpperCase(), enabled: true });
+    if (!promo) return res.status(404).json({ error: 'Código inválido' });
+    if (promo.uses >= promo.maxUses) return res.status(400).json({ error: 'Código agotado' });
+    const k = await LicenseKey.findOne({ key: String(key || '').trim() });
+    if (!k) return res.status(404).json({ error: 'Key no encontrada' });
+    if (promo.providerId && k.providerId !== promo.providerId) {
+      return res.status(400).json({ error: 'Código no válido para este provider' });
+    }
+    if (k.ownerId !== promo.ownerId) {
+      return res.status(400).json({ error: 'Key de otro vendedor' });
+    }
+    const base = k.expiresAt && k.expiresAt > new Date() ? new Date(k.expiresAt) : new Date();
+    base.setHours(base.getHours() + promo.extraHours);
+    k.expiresAt = base;
+    await k.save();
+    promo.uses += 1;
+    await promo.save();
+    res.json({ success: true, expiresAt: k.expiresAt, extraHours: promo.extraHours });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
+
+app.delete('/api/promos/:id', auth, needMongo, async (req, res) => {
+  await PromoCode.deleteOne({ _id: req.params.id, ownerId: req.user.sub });
+  res.json({ success: true });
+});
+
+// ========== GET-KEY / MONETAG (link gate) ==========
+app.post('/api/keys/get-link', auth, needMongo, async (req, res) => {
+  const { providerId, gateUrl } = req.body || {};
+  const prov = await Provider.findOne({ _id: providerId, ownerId: req.user.sub });
+  if (!prov) return res.status(404).json({ error: 'Provider no encontrado' });
+  // gateUrl = user's linkvertise/monetag URL; we append state token
+  const token = crypto.randomBytes(16).toString('hex');
+  // store short-lived token on provider via note field map in memory
+  if (!global.__getKeyTokens) global.__getKeyTokens = new Map();
+  global.__getKeyTokens.set(token, {
+    ownerId: req.user.sub,
+    providerId: String(prov._id),
+    providerName: prov.name,
+    hwidLimit: prov.hwidLimit,
+    hours: prov.keyValidityHours,
+    exp: Date.now() + 30 * 60 * 1000
+  });
+  const base = gateUrl || '';
+  const claim = (req.headers['x-forwarded-proto'] || 'https') + '://' + (req.headers['x-forwarded-host'] || req.headers.host) + '/api/keys/claim?token=' + token;
+  res.json({
+    token,
+    claimUrl: claim,
+    // User puts claimUrl as destination after linkvertise, or concatenates
+    instructions: 'Configura tu acortador (Linkvertise/Monetag) para redirigir a claimUrl tras completar el anuncio.'
+  });
+});
+
+app.get('/api/keys/claim', needMongo, async (req, res) => {
+  try {
+    const token = req.query.token;
+    const store = global.__getKeyTokens;
+    const meta = store && store.get(token);
+    if (!meta || meta.exp < Date.now()) {
+      return res.status(400).type('html').send('<h1>Token inválido o expirado</h1>');
+    }
+    store.delete(token);
+    let expiresAt = null;
+    if (meta.hours > 0) {
+      expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + meta.hours);
+    }
+    const doc = await LicenseKey.create({
+      key: genKey(),
+      providerId: meta.providerId,
+      providerName: meta.providerName,
+      ownerId: meta.ownerId,
+      hwidLimit: meta.hwidLimit || 1,
+      expiresAt,
+      note: 'get-key claim'
+    });
+    logTelemetry(meta.ownerId, 'key_claim', clientIp(req), doc.key.slice(0, 8));
+    res.type('html').send(`<!DOCTYPE html><html><body style="font-family:system-ui;background:#0a0a0f;color:#e4e4ed;display:flex;align-items:center;justify-content:center;min-height:100vh">
+    <div style="background:#111118;padding:32px;border-radius:16px;max-width:480px;border:1px solid #1e1e2a">
+      <h2 style="color:#a78bfa">Tu Key</h2>
+      <p style="word-break:break-all;font-family:monospace;background:#0c0c12;padding:12px;border-radius:8px">${doc.key}</p>
+      <p style="color:#8b8b9e;font-size:13px">Cópiala y pégala en el script. Expira según el provider.</p>
+    </div></body></html>`);
+  } catch (e) {
+    res.status(500).send('Error');
+  }
+});
+
+// ========== BUG REPORTS ==========
+app.post('/api/bugs', needMongo, async (req, res) => {
+  const { ownerId, scriptId, message, fromUser, meta } = req.body || {};
+  if (!ownerId || !message) return res.status(400).json({ error: 'ownerId y message requeridos' });
+  const doc = await BugReport.create({
+    ownerId: String(ownerId),
+    scriptId: String(scriptId || ''),
+    fromUser: String(fromUser || 'anonymous').slice(0, 80),
+    message: String(message).slice(0, 2000),
+    meta: String(meta || '').slice(0, 500)
+  });
+  logTelemetry(ownerId, 'bug_report', clientIp(req), String(message).slice(0, 80));
+  res.json({ success: true, id: doc._id });
+});
+
+app.get('/api/bugs', auth, needMongo, async (req, res) => {
+  res.json(await BugReport.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).limit(100));
+});
+
+app.post('/api/bugs/:id/done', auth, needMongo, async (req, res) => {
+  await BugReport.updateOne({ _id: req.params.id, ownerId: req.user.sub }, { status: 'done' });
+  res.json({ success: true });
+});
+
+// ========== TELEMETRY ==========
+app.get('/api/telemetry', auth, needMongo, async (req, res) => {
+  const list = await Telemetry.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).limit(100).lean();
+  res.json(list);
+});
+
+// ========== ANTI DEBUG / ENV CHECK ==========
+app.post('/api/security/env-check', needMongo, async (req, res) => {
+  const { signals, scriptId, ownerId } = req.body || {};
+  // signals: { emulator, httpSpy, isStudio, debugHooks, suspicious }
+  const s = signals || {};
+  let score = 0;
+  const reasons = [];
+  if (s.emulator) { score += 40; reasons.push('emulator'); }
+  if (s.httpSpy) { score += 30; reasons.push('http_spy'); }
+  if (s.isStudio) { score += 25; reasons.push('studio'); }
+  if (s.debugHooks) { score += 35; reasons.push('debug_hooks'); }
+  if (s.suspicious) { score += 20; reasons.push('suspicious'); }
+  const blocked = score >= 50;
+  if (blocked && ownerId) {
+    logTelemetry(ownerId, 'env_block', clientIp(req), reasons.join(','));
+  }
+  res.json({ ok: !blocked, score, reasons, blocked });
+});
+
+// ========== DYNAMIC ENDPOINTS ==========
+app.get('/api/routes', auth, needMongo, async (req, res) => {
+  res.json(await EndpointRoute.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }));
+});
+
+app.post('/api/routes', auth, needMongo, async (req, res) => {
+  const { scriptId } = req.body || {};
+  const s = await Script.findOne({ id: scriptId, ownerId: req.user.sub });
+  if (!s) return res.status(404).json({ error: 'Script no encontrado' });
+  const slug = crypto.randomBytes(6).toString('hex');
+  const doc = await EndpointRoute.create({
+    ownerId: req.user.sub,
+    slug,
+    scriptId: s.id,
+    target: 'raw'
+  });
+  res.json({
+    ...doc.toObject(),
+    url: '/r/' + slug
+  });
+});
+
+app.delete('/api/routes/:id', auth, needMongo, async (req, res) => {
+  await EndpointRoute.deleteOne({ _id: req.params.id, ownerId: req.user.sub });
+  res.json({ success: true });
+});
+
+app.post('/api/routes/rotate', auth, needMongo, async (req, res) => {
+  const { id } = req.body || {};
+  const doc = await EndpointRoute.findOne({ _id: id, ownerId: req.user.sub });
+  if (!doc) return res.status(404).json({ error: 'No encontrado' });
+  doc.slug = crypto.randomBytes(6).toString('hex');
+  await doc.save();
+  res.json({ slug: doc.slug, url: '/r/' + doc.slug });
+});
+
+app.get('/r/:slug', rawBurstLimiter, rawLimiter, async (req, res) => {
+  try {
+    if (mongoose.connection.readyState !== 1) return res.status(503).send('-- offline');
+    const route = await EndpointRoute.findOne({ slug: req.params.slug, enabled: true });
+    if (!route) return res.status(404).send('-- not found');
+    // reuse raw logic by redirecting internally
+    req.params.id = route.scriptId;
+    // minimal: fetch and send like raw
+    const s = await Script.findOne({ id: route.scriptId });
+    if (!s) return res.status(404).send('-- not found');
+    const isBrowser = /mozilla|chrome|safari|firefox|edge/i.test(req.headers['user-agent'] || '') &&
+      !/roblox|executor|synapse|script-ware|krnl|fluxus|electron/i.test(req.headers['user-agent'] || '');
+    if (isBrowser) return res.status(403).send('Forbidden');
+    s.executions += 1;
+    await s.save();
+    logTelemetry(s.ownerId, 'route_raw', clientIp(req), route.slug);
+    res.type('text/plain').send(s.obfuscated);
+  } catch (e) {
+    res.status(500).send('-- error');
+  }
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
