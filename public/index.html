@@ -413,6 +413,13 @@
                   <select id="sProvider"></select>
                 </div>
               </div>
+              <div class="flex flex-wrap items-center gap-4">
+                <label class="flex items-center gap-2 text-sm cursor-pointer" style="color:#a0a0b0">
+                  <input type="checkbox" id="sObfuscate" checked style="width:auto;accent-color:#7c3aed"/>
+                  Ofuscar con QyrexObf
+                </label>
+                <span class="text-xs" style="color:#5a5a6e">Si lo desactivas se sirve el código plano, pero el raw sigue bloqueado en navegador (anti-tamper).</span>
+              </div>
               <div class="text-xs" style="color:#5a5a6e">Gratis: máx 15 scripts · VIP: ilimitados</div>
 
               <div class="tab-bar">
@@ -920,6 +927,7 @@ function renderScripts(list){
           '<div class="text-xs mt-0.5 truncate" style="color:#5a5a6e">'+esc(s.description||'Sin descripción')+'</div>'+
           '<div class="flex flex-wrap gap-2 mt-2">'+
             '<span class="chip">'+(s.executions||0)+' runs</span>'+
+            '<span class="chip">'+(s.doObfuscate===false?'Plain+AT':'Obfuscated')+'</span>'+
             (date ? '<span class="chip">'+esc(date)+'</span>' : '')+
             '<span class="chip" style="font-family:monospace;font-size:10px">'+esc((s.id||'').slice(0,10))+'…</span>'+
           '</div>'+
@@ -968,6 +976,8 @@ async function editScript(id){
     document.getElementById('sName').value = s.name || '';
     document.getElementById('sDesc').value = s.description || '';
     document.getElementById('sSource').value = s.source || '';
+    const ob = document.getElementById('sObfuscate');
+    if (ob) ob.checked = s.doObfuscate !== false;
     document.getElementById('createTitle').textContent = 'Edit Script';
     document.getElementById('createSubtitle').textContent = 'Modificando · ' + (s.name || id);
     document.getElementById('createBtnLabel').textContent = 'Save changes';
@@ -990,6 +1000,7 @@ function resetCreateForm(){
   document.getElementById('createSubtitle').textContent = 'Create or modify Lua script';
   document.getElementById('createBtnLabel').textContent = 'Create';
   document.getElementById('createOutWrap').classList.add('hidden');
+  const ob2 = document.getElementById('sObfuscate'); if (ob2) ob2.checked = true;
   updateLines();
 }
 
@@ -1010,7 +1021,7 @@ async function createScript(){
     if (editId) {
       r = await fetch('/api/scripts/' + editId, {
         method: 'PUT', headers: headers(),
-        body: JSON.stringify({ name, description, source, keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
+        body: JSON.stringify({ name, description, source, doObfuscate: !!(document.getElementById('sObfuscate')&&document.getElementById('sObfuscate').checked), keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
       });
       d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Error al guardar');
@@ -1026,7 +1037,7 @@ async function createScript(){
     } else {
       r = await fetch('/api/scripts', {
         method:'POST', headers: headers(),
-        body: JSON.stringify({ name, description, source, keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
+        body: JSON.stringify({ name, description, source, doObfuscate: !!(document.getElementById('sObfuscate')&&document.getElementById('sObfuscate').checked), keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
       });
       d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Error');
