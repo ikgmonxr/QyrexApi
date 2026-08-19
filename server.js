@@ -106,6 +106,40 @@ const HubScript = mongoose.models.QrexHubScript || mongoose.model('QrexHubScript
   createdAt: { type: Date, default: Date.now }
 }));
 
+const Provider = mongoose.models.QrexProvider || mongoose.model('QrexProvider', new mongoose.Schema({
+  name: { type: String, required: true },
+  ownerId: { type: String, required: true },
+  keyValidityHours: { type: Number, default: 24 },
+  hwidLimit: { type: Number, default: 1 },
+  enabled: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const LicenseKey = mongoose.models.QrexLicenseKey || mongoose.model('QrexLicenseKey', new mongoose.Schema({
+  key: { type: String, unique: true, required: true },
+  providerId: { type: String, required: true },
+  providerName: String,
+  ownerId: { type: String, required: true },
+  hwidLimit: { type: Number, default: 1 },
+  hwids: { type: [String], default: [] },
+  expiresAt: { type: Date, default: null },
+  enabled: { type: Boolean, default: true },
+  note: { type: String, default: '' },
+  uses: { type: Number, default: 0 },
+  lastUsedAt: { type: Date, default: null },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+function genKey() {
+  return crypto.randomUUID ? crypto.randomUUID() : [
+    crypto.randomBytes(4).toString('hex'),
+    crypto.randomBytes(2).toString('hex'),
+    crypto.randomBytes(2).toString('hex'),
+    crypto.randomBytes(2).toString('hex'),
+    crypto.randomBytes(6).toString('hex')
+  ].join('-');
+}
+
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
@@ -570,6 +604,166 @@ app.get('/api/admin/stats', auth, needMongo, requireAdmin, async (req, res) => {
   const hub = await HubScript.countDocuments();
   const premium = await User.countDocuments({ premium: true });
   res.json({ users, scripts, hub, premium });
+});
+
+
+// ========== KEY SYSTEM ==========
+app.get('/api/providers', auth, needMongo, async (req, res) => {
+  const list = await Provider.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).lean();
+  res.json(list);
+});
+
+app.post('/api/providers', auth, needMongo, async (req, res) => {
+  try {
+    const { name, keyValidityHours, hwidLimit } = req.body || {};
+    const n = (name || '').trim();
+    if (!n || n.length < 2) return res.status(400).json({ error: 'Nombre requerido' });
+    const exists = await Provider.findOne({ ownerId: req.user.sub, name: n });
+    if (exists) return res.status(400).json({ error: 'Ya tienes un provider con ese nombre' });
+    const doc = await Provider.create({
+      name: n,
+      ownerId: req.user.sub,
+      keyValidityHours: Math.max(1, Number(keyValidityHours) || 24),
+      hwidLimit: Math.max(1, Math.min(10, Number(hwidLimit) || 1))
+    });
+    res.json(doc);
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
+
+app.put('/api/providers/:id', auth, needMongo, async (req, res) => {
+  const p = await Provider.findOne({ _id: req.params.id, ownerId: req.user.sub });
+  if (!p) return res.status(404).json({ error: 'No encontrado' });
+  const { name, keyValidityHours, hwidLimit, enabled } = req.body || {};
+  if (name) p.name = name.trim();
+  if (keyValidityHours !== undefined) p.keyValidityHours = Math.max(1, Number(keyValidityHours) || 24);
+  if (hwidLimit !== undefined) p.hwidLimit = Math.max(1, Math.min(10, Number(hwidLimit) || 1));
+  if (enabled !== undefined) p.enabled = !!enabled;
+  await p.save();
+  res.json(p);
+});
+
+app.delete('/api/providers/:id', auth, needMongo, async (req, res) => {
+  const p = await Provider.findOne({ _id: req.params.id, ownerId: req.user.sub });
+  if (!p) return res.status(404).json({ error: 'No encontrado' });
+  await LicenseKey.deleteMany({ providerId: String(p._id), ownerId: req.user.sub });
+  await Provider.deleteOne({ _id: p._id });
+  res.json({ success: true });
+});
+
+app.get('/api/keys', auth, needMongo, async (req, res) => {
+  const q = { ownerId: req.user.sub };
+  if (req.query.providerId) q.providerId = req.query.providerId;
+  const list = await LicenseKey.find(q).sort({ createdAt: -1 }).limit(300).lean();
+  res.json(list);
+});
+
+app.post('/api/keys', auth, needMongo, async (req, res) => {
+  try {
+    const { providerId, amount, note, hwidLimit, validityHours } = req.body || {};
+    const prov = await Provider.findOne({ _id: providerId, ownerId: req.user.sub });
+    if (!prov) return res.status(404).json({ error: 'Provider no encontrado' });
+    const n = Math.min(50, Math.max(1, Number(amount) || 1));
+    const hours = validityHours !== undefined ? Number(validityHours) : prov.keyValidityHours;
+    const limit = hwidLimit !== undefined ? Number(hwidLimit) : prov.hwidLimit;
+    const created = [];
+    for (let i = 0; i < n; i++) {
+      let expiresAt = null;
+      if (hours && hours > 0) {
+        expiresAt = new Date();
+        expiresAt.setHours(expiresAt.getHours() + hours);
+      }
+      const doc = await LicenseKey.create({
+        key: genKey(),
+        providerId: String(prov._id),
+        providerName: prov.name,
+        ownerId: req.user.sub,
+        hwidLimit: Math.max(1, Math.min(10, limit || 1)),
+        expiresAt,
+        note: (note || '').slice(0, 120)
+      });
+      created.push(doc);
+    }
+    res.json({ keys: created });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
+
+app.delete('/api/keys/:id', auth, needMongo, async (req, res) => {
+  await LicenseKey.deleteOne({ _id: req.params.id, ownerId: req.user.sub });
+  res.json({ success: true });
+});
+
+app.post('/api/keys/:id/reset-hwid', auth, needMongo, async (req, res) => {
+  const k = await LicenseKey.findOne({ _id: req.params.id, ownerId: req.user.sub });
+  if (!k) return res.status(404).json({ error: 'No encontrado' });
+  k.hwids = [];
+  await k.save();
+  res.json({ success: true });
+});
+
+app.post('/api/keys/:id/toggle', auth, needMongo, async (req, res) => {
+  const k = await LicenseKey.findOne({ _id: req.params.id, ownerId: req.user.sub });
+  if (!k) return res.status(404).json({ error: 'No encontrado' });
+  k.enabled = !k.enabled;
+  await k.save();
+  res.json({ enabled: k.enabled });
+});
+
+// Verificación pública (Roblox / executors)
+app.post('/api/keys/verify', needMongo, async (req, res) => {
+  try {
+    const { key, hwid, provider } = req.body || {};
+    const kstr = (key || '').trim();
+    if (!kstr) return res.status(400).json({ success: false, error: 'Key requerida' });
+
+    const doc = await LicenseKey.findOne({ key: kstr });
+    if (!doc) return res.status(401).json({ success: false, error: 'Key inválida' });
+    if (!doc.enabled) return res.status(401).json({ success: false, error: 'Key desactivada' });
+
+    if (provider) {
+      const provName = String(provider).trim().toLowerCase();
+      if ((doc.providerName || '').toLowerCase() !== provName) {
+        return res.status(401).json({ success: false, error: 'Provider no coincide' });
+      }
+    }
+
+    const prov = await Provider.findById(doc.providerId);
+    if (prov && !prov.enabled) {
+      return res.status(401).json({ success: false, error: 'Provider desactivado' });
+    }
+
+    if (doc.expiresAt && new Date(doc.expiresAt) < new Date()) {
+      return res.status(401).json({ success: false, error: 'Key expirada' });
+    }
+
+    const hw = (hwid || '').trim();
+    if (hw) {
+      if (!doc.hwids.includes(hw)) {
+        if (doc.hwids.length >= (doc.hwidLimit || 1)) {
+          return res.status(401).json({ success: false, error: 'HWID límite alcanzado' });
+        }
+        doc.hwids.push(hw);
+      }
+    }
+
+    doc.uses = (doc.uses || 0) + 1;
+    doc.lastUsedAt = new Date();
+    await doc.save();
+
+    res.json({
+      success: true,
+      provider: doc.providerName,
+      expiresAt: doc.expiresAt,
+      hwidLimit: doc.hwidLimit,
+      hwidsUsed: doc.hwids.length
+    });
+  } catch (e) {
+    console.error('verify', e);
+    res.status(500).json({ success: false, error: 'Error del servidor' });
+  }
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
