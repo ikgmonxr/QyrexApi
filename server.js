@@ -20,6 +20,17 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
 
+app.use(async (req, res, next) => {
+  try {
+    if (!req.path.startsWith('/api')) return next();
+    const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+    if (!ip || !mongoReady && mongoose.connection.readyState !== 1) return next();
+    const banned = await BlacklistIP.findOne({ ip }).lean();
+    if (banned) return res.status(403).json({ error: 'IP bloqueada' });
+    next();
+  } catch { next(); }
+});
+
 let mongoReady = false;
 
 async function connectMongo() {
@@ -82,8 +93,64 @@ const Script = mongoose.models.QrexScript || mongoose.model('QrexScript', new mo
   source: String,
   obfuscated: String,
   executions: { type: Number, default: 0 },
+  keyMode: { type: String, default: 'keyless' }, // keyless | key
+  providerId: { type: String, default: '' },
+  providerName: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now }
 }));
+
+const ScriptVersion = mongoose.models.QrexScriptVersion || mongoose.model('QrexScriptVersion', new mongoose.Schema({
+  scriptId: String,
+  ownerId: String,
+  name: String,
+  source: String,
+  obfuscated: String,
+  note: { type: String, default: '' },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const Webhook = mongoose.models.QrexWebhook || mongoose.model('QrexWebhook', new mongoose.Schema({
+  ownerId: String,
+  url: String,
+  events: { type: [String], default: ['key_verify', 'script_exec'] },
+  enabled: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const Asset = mongoose.models.QrexAsset || mongoose.model('QrexAsset', new mongoose.Schema({
+  ownerId: String,
+  name: String,
+  type: { type: String, default: 'text' }, // text | url | image
+  content: String,
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const BlacklistIP = mongoose.models.QrexBlacklistIP || mongoose.model('QrexBlacklistIP', new mongoose.Schema({
+  ip: { type: String, unique: true },
+  reason: { type: String, default: '' },
+  createdBy: String,
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const FREE_SCRIPT_LIMIT = 15;
+
+async function fireWebhooks(ownerId, event, payload) {
+  try {
+    const hooks = await Webhook.find({ ownerId, enabled: true, events: event });
+    const body = JSON.stringify({
+      content: null,
+      embeds: [{
+        title: event === 'key_verify' ? 'Key verificada' : event === 'script_exec' ? 'Script ejecutado' : event,
+        description: '```json\n' + JSON.stringify(payload, null, 2).slice(0, 1500) + '\n```',
+        color: event === 'key_verify' ? 0x7c3aed : 0x34d399,
+        timestamp: new Date().toISOString()
+      }]
+    });
+    await Promise.all(hooks.map(h =>
+      fetch(h.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }).catch(() => {})
+    ));
+  } catch (e) { console.error('webhook', e.message); }
+}
 
 const Execution = mongoose.models.QrexExecution || mongoose.model('QrexExecution', new mongoose.Schema({
   scriptId: String,
@@ -333,8 +400,25 @@ app.get('/api/scripts/:id', auth, needMongo, async (req, res) => {
 
 app.post('/api/scripts', auth, needMongo, async (req, res) => {
   try {
-    const { name, description, source } = req.body || {};
+    const { name, description, source, keyMode, providerId } = req.body || {};
     if (!name || !source) return res.status(400).json({ error: 'name y source requeridos' });
+
+    const me = await User.findById(req.user.sub);
+    const prem = isPremiumUser(me);
+    const count = await Script.countDocuments({ ownerId: req.user.sub });
+    if (!prem && count >= FREE_SCRIPT_LIMIT) {
+      return res.status(403).json({ error: 'Límite de ' + FREE_SCRIPT_LIMIT + ' scripts. Activa VIP/Premium para ilimitados.' });
+    }
+
+    let providerName = '';
+    let pid = '';
+    const mode = keyMode === 'key' ? 'key' : 'keyless';
+    if (mode === 'key' && providerId) {
+      const prov = await Provider.findOne({ _id: providerId, ownerId: req.user.sub });
+      if (!prov) return res.status(400).json({ error: 'Provider inválido' });
+      providerName = prov.name;
+      pid = String(prov._id);
+    }
 
     const obfuscated = await obfuscateWithQyrex(source);
     const doc = await Script.create({
@@ -342,7 +426,10 @@ app.post('/api/scripts', auth, needMongo, async (req, res) => {
       name,
       description: description || '',
       source,
-      obfuscated
+      obfuscated,
+      keyMode: mode,
+      providerId: pid,
+      providerName
     });
 
     const host = req.headers['x-forwarded-host'] || req.headers.host;
@@ -361,12 +448,38 @@ app.post('/api/scripts', auth, needMongo, async (req, res) => {
 
 app.put('/api/scripts/:id', auth, needMongo, async (req, res) => {
   try {
-    const { name, description, source } = req.body || {};
+    const { name, description, source, keyMode, providerId } = req.body || {};
     const s = await Script.findOne({ id: req.params.id, ownerId: req.user.sub });
     if (!s) return res.status(404).json({ error: 'No encontrado' });
 
+    // version snapshot before change
+    if (source || name || description !== undefined) {
+      await ScriptVersion.create({
+        scriptId: s.id,
+        ownerId: req.user.sub,
+        name: s.name,
+        source: s.source,
+        obfuscated: s.obfuscated,
+        note: 'Auto-save before edit'
+      });
+      const vers = await ScriptVersion.find({ scriptId: s.id }).sort({ createdAt: -1 });
+      if (vers.length > 15) {
+        const drop = vers.slice(15);
+        await ScriptVersion.deleteMany({ _id: { $in: drop.map(v => v._id) } });
+      }
+    }
+
     if (name) s.name = name;
     if (description !== undefined) s.description = description;
+    if (keyMode === 'key' || keyMode === 'keyless') {
+      s.keyMode = keyMode;
+      if (keyMode === 'key' && providerId) {
+        const prov = await Provider.findOne({ _id: providerId, ownerId: req.user.sub });
+        if (prov) { s.providerId = String(prov._id); s.providerName = prov.name; }
+      } else if (keyMode === 'keyless') {
+        s.providerId = ''; s.providerName = '';
+      }
+    }
     if (source) {
       s.source = source;
       s.obfuscated = await obfuscateWithQyrex(source);
@@ -445,13 +558,16 @@ app.get('/api/raw/:id', async (req, res) => {
   s.executions += 1;
   await s.save();
 
+  const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '?';
   await Execution.create({
     scriptId: s.id,
     scriptName: s.name,
     ownerId: s.ownerId,
-    ip: req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '?',
+    ip,
     userAgent: req.headers['user-agent'] || ''
   });
+
+  fireWebhooks(s.ownerId, 'script_exec', { scriptId: s.id, name: s.name, ip: String(ip).split(',')[0] });
 
   res.setHeader('Cache-Control', 'no-store');
   res.type('text/plain').send(s.obfuscated);
@@ -753,6 +869,13 @@ app.post('/api/keys/verify', needMongo, async (req, res) => {
     doc.lastUsedAt = new Date();
     await doc.save();
 
+    fireWebhooks(doc.ownerId, 'key_verify', {
+      key: kstr.slice(0, 8) + '...',
+      provider: doc.providerName,
+      hwid: hw || null,
+      uses: doc.uses
+    });
+
     res.json({
       success: true,
       provider: doc.providerName,
@@ -764,6 +887,154 @@ app.post('/api/keys/verify', needMongo, async (req, res) => {
     console.error('verify', e);
     res.status(500).json({ success: false, error: 'Error del servidor' });
   }
+});
+
+
+// ========== VERSIONS ==========
+app.get('/api/scripts/:id/versions', auth, needMongo, async (req, res) => {
+  const s = await Script.findOne({ id: req.params.id, ownerId: req.user.sub });
+  if (!s) return res.status(404).json({ error: 'No encontrado' });
+  const list = await ScriptVersion.find({ scriptId: s.id, ownerId: req.user.sub }).sort({ createdAt: -1 }).select('-source -obfuscated').limit(20);
+  res.json(list);
+});
+
+app.post('/api/scripts/:id/versions/:vid/restore', auth, needMongo, async (req, res) => {
+  const s = await Script.findOne({ id: req.params.id, ownerId: req.user.sub });
+  if (!s) return res.status(404).json({ error: 'No encontrado' });
+  const v = await ScriptVersion.findOne({ _id: req.params.vid, scriptId: s.id, ownerId: req.user.sub });
+  if (!v) return res.status(404).json({ error: 'Versión no encontrada' });
+  await ScriptVersion.create({ scriptId: s.id, ownerId: req.user.sub, name: s.name, source: s.source, obfuscated: s.obfuscated, note: 'Before restore' });
+  s.source = v.source;
+  s.obfuscated = v.obfuscated;
+  if (v.name) s.name = v.name;
+  await s.save();
+  res.json({ success: true });
+});
+
+// ========== WEBHOOKS ==========
+app.get('/api/webhooks', auth, needMongo, async (req, res) => {
+  res.json(await Webhook.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }));
+});
+
+app.post('/api/webhooks', auth, needMongo, async (req, res) => {
+  const { url, events } = req.body || {};
+  if (!url || !String(url).startsWith('https://')) return res.status(400).json({ error: 'URL Discord inválida (https)' });
+  const doc = await Webhook.create({
+    ownerId: req.user.sub,
+    url: String(url).trim(),
+    events: Array.isArray(events) && events.length ? events : ['key_verify', 'script_exec']
+  });
+  res.json(doc);
+});
+
+app.delete('/api/webhooks/:id', auth, needMongo, async (req, res) => {
+  await Webhook.deleteOne({ _id: req.params.id, ownerId: req.user.sub });
+  res.json({ success: true });
+});
+
+app.post('/api/webhooks/test', auth, needMongo, async (req, res) => {
+  const { url } = req.body || {};
+  if (!url) return res.status(400).json({ error: 'URL requerida' });
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ embeds: [{ title: 'QrexApi Test', description: 'Webhook OK ✓', color: 0x7c3aed }] })
+    });
+    res.json({ ok: r.ok, status: r.status });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ========== LEADERBOARD ==========
+app.get('/api/leaderboard', needMongo, async (req, res) => {
+  const agg = await Script.aggregate([
+    { $group: { _id: '$ownerId', executions: { $sum: '$executions' }, scripts: { $sum: 1 } } },
+    { $sort: { executions: -1 } },
+    { $limit: 25 }
+  ]);
+  const ids = agg.map(a => a._id).filter(Boolean);
+  const users = await User.find({ _id: { $in: ids } }).select('username premium role').lean();
+  const map = Object.fromEntries(users.map(u => [String(u._id), u]));
+  res.json(agg.map((a, i) => ({
+    rank: i + 1,
+    username: map[a._id]?.username || 'unknown',
+    premium: !!(map[a._id]?.premium || map[a._id]?.role === 'admin'),
+    executions: a.executions,
+    scripts: a.scripts
+  })));
+});
+
+// ========== ASSETS ==========
+app.get('/api/assets', auth, needMongo, async (req, res) => {
+  res.json(await Asset.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).limit(100));
+});
+
+app.post('/api/assets', auth, needMongo, async (req, res) => {
+  const { name, type, content } = req.body || {};
+  if (!name || !content) return res.status(400).json({ error: 'name y content requeridos' });
+  if (String(content).length > 200000) return res.status(400).json({ error: 'Máximo ~200KB' });
+  const count = await Asset.countDocuments({ ownerId: req.user.sub });
+  const me = await User.findById(req.user.sub);
+  const lim = isPremiumUser(me) ? 100 : 20;
+  if (count >= lim) return res.status(403).json({ error: 'Límite de assets (' + lim + ')' });
+  const doc = await Asset.create({
+    ownerId: req.user.sub,
+    name: String(name).slice(0, 80),
+    type: ['text', 'url', 'image'].includes(type) ? type : 'text',
+    content: String(content)
+  });
+  res.json(doc);
+});
+
+app.delete('/api/assets/:id', auth, needMongo, async (req, res) => {
+  await Asset.deleteOne({ _id: req.params.id, ownerId: req.user.sub });
+  res.json({ success: true });
+});
+
+// ========== STATUS ==========
+app.get('/api/status', async (req, res) => {
+  const t0 = Date.now();
+  let mongoMs = null;
+  let mongoOk = false;
+  try {
+    if (mongoose.connection.readyState === 1) {
+      await mongoose.connection.db.admin().ping();
+      mongoOk = true;
+      mongoMs = Date.now() - t0;
+    }
+  } catch { mongoOk = false; }
+  res.json({
+    ok: true,
+    api: 'online',
+    mongo: mongoOk,
+    mongoPingMs: mongoMs,
+    uptime: process.uptime(),
+    freeScriptLimit: FREE_SCRIPT_LIMIT,
+    time: new Date().toISOString()
+  });
+});
+
+// ========== BLACKLIST (admin) ==========
+app.get('/api/admin/blacklist', auth, needMongo, requireAdmin, async (req, res) => {
+  res.json(await BlacklistIP.find().sort({ createdAt: -1 }).limit(200));
+});
+
+app.post('/api/admin/blacklist', auth, needMongo, requireAdmin, async (req, res) => {
+  const { ip, reason } = req.body || {};
+  if (!ip) return res.status(400).json({ error: 'IP requerida' });
+  const doc = await BlacklistIP.findOneAndUpdate(
+    { ip: String(ip).trim() },
+    { ip: String(ip).trim(), reason: reason || '', createdBy: req.user.sub },
+    { upsert: true, new: true }
+  );
+  res.json(doc);
+});
+
+app.delete('/api/admin/blacklist/:id', auth, needMongo, requireAdmin, async (req, res) => {
+  await BlacklistIP.deleteOne({ _id: req.params.id });
+  res.json({ success: true });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
