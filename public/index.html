@@ -74,11 +74,29 @@
   table{width:100%;border-collapse:collapse}
   th{text-align:left;padding:12px 16px;font-size:12px;color:#5a5a6e;font-weight:600;border-bottom:1px solid #1e1e2a}
   td{padding:12px 16px;font-size:13px;border-bottom:1px solid #15151e}
+
+  .toast-wrap{position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+  .toast{pointer-events:auto;background:#16161f;border:1px solid #2a2a3a;color:#e4e4ed;padding:12px 16px;border-radius:12px;font-size:13px;box-shadow:0 12px 40px rgba(0,0,0,.45);animation:fadeUp .3s both;min-width:220px;display:flex;align-items:center;gap:10px}
+  .toast.ok{border-color:rgba(52,211,153,.35)}
+  .toast.err{border-color:rgba(248,113,113,.35)}
+  .toast .t-icon{font-size:16px}
+  .search-box{position:relative;max-width:280px}
+  .search-box input{padding-left:36px}
+  .search-box svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#5a5a6e;width:16px;height:16px;pointer-events:none}
+  .script-actions{display:flex;flex-wrap:wrap;gap:8px}
+  .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;border:1px solid #2a2a3a;background:transparent;color:#a0a0b0;cursor:pointer;transition:all .2s}
+  .icon-btn:hover{border-color:#7c3aed;color:#c4b5fd;background:#1a1428}
+  .icon-btn.danger:hover{border-color:#f87171;color:#f87171;background:#1a1010}
+  .empty-state{text-align:center;padding:48px 24px;color:#5a5a6e}
+  .empty-state svg{margin:0 auto 12px;opacity:.4}
+  .chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:6px;background:#14141e;color:#8b8b9e;border:1px solid #252533}
+
 </style>
 </head>
 <body>
 
 <!-- LOGIN -->
+<div class="toast-wrap" id="toasts"></div>
 <div id="loginView" class="min-h-screen flex items-center justify-center p-6">
   <div class="card p-10 w-full max-w-md">
     <div class="flex items-center justify-center gap-3 mb-2">
@@ -118,7 +136,7 @@
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
           Lua Scripts
         </button>
-        <button class="nav-item" data-page="create" onclick="go('create')">
+        <button class="nav-item" data-page="create" onclick="if(!editingId)resetCreateForm();go('create')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
           Create Script
         </button>
@@ -183,9 +201,15 @@
 
         <!-- SCRIPTS LIST -->
         <section id="page-scripts" class="page hidden">
-          <div class="flex items-center justify-between mb-6">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
             <h1 class="text-2xl font-bold">Lua Scripts</h1>
-            <button onclick="go('create')" class="btn-primary text-sm py-2.5 px-4">+ Create</button>
+            <div class="flex items-center gap-3">
+              <div class="search-box">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <input id="scriptSearch" placeholder="Buscar script..." oninput="filterScripts()" />
+              </div>
+              <button onclick="resetCreateForm();go('create')" class="btn-primary text-sm py-2.5 px-4">+ Create</button>
+            </div>
           </div>
           <div id="scriptsList" class="grid gap-3"></div>
         </section>
@@ -199,8 +223,8 @@
                   <svg width="18" height="18" fill="none" stroke="#a78bfa" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
                 </div>
                 <div>
-                  <div class="font-semibold">Create Script</div>
-                  <div class="text-xs" style="color:#5a5a6e">Create or modify Lua script</div>
+                  <div class="font-semibold" id="createTitle">Create Script</div>
+                  <div class="text-xs" style="color:#5a5a6e" id="createSubtitle">Create or modify Lua script</div>
                 </div>
               </div>
             </div>
@@ -254,10 +278,11 @@
             </div>
 
             <div class="flex items-center justify-end gap-3 px-6 py-4 border-t" style="border-color:#1e1e2a;background:#0d0d14">
-              <button type="button" onclick="go('scripts')" class="btn-ghost px-5 py-2.5">Cancel</button>
+              <button type="button" onclick="resetCreateForm();go('scripts')" class="btn-ghost px-5 py-2.5">Cancel</button>
+              <input type="hidden" id="editId" value=""/>
               <button id="createBtn" onclick="createScript()" class="btn-primary px-5 py-2.5 flex items-center gap-2">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-                Create
+                <span id="createBtnLabel">Create</span>
               </button>
             </div>
           </div>
@@ -487,30 +512,111 @@ async function loadStats(){
   } catch {}
 }
 
+let allScripts = [];
+let editingId = null;
+
+function toast(msg, type){
+  const w = document.getElementById('toasts');
+  if (!w) return;
+  const t = document.createElement('div');
+  t.className = 'toast ' + (type || 'ok');
+  t.innerHTML = '<span class="t-icon">' + (type === 'err' ? '✕' : '✓') + '</span><span>' + esc(msg) + '</span>';
+  w.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 2800);
+}
+
+function filterScripts(){
+  const q = (document.getElementById('scriptSearch')?.value || '').toLowerCase().trim();
+  renderScripts(q ? allScripts.filter(s => (s.name||'').toLowerCase().includes(q) || (s.description||'').toLowerCase().includes(q)) : allScripts);
+}
+
+function renderScripts(list){
+  const el = document.getElementById('scriptsList');
+  const host = location.origin;
+  if (!list.length) {
+    el.innerHTML = '<div class="card empty-state"><svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg><div>No hay scripts</div><button onclick="go(\'create\')" class="btn-primary mt-4 text-sm">Crear el primero</button></div>';
+    return;
+  }
+  el.innerHTML = list.map(s => {
+    const ls = 'loadstring(game:HttpGet("'+host+'/api/raw/'+s.id+'"))()';
+    const date = s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '';
+    return '<div class="card p-5">'+
+      '<div class="flex justify-between items-start mb-3 gap-3">'+
+        '<div class="min-w-0">'+
+          '<div class="font-semibold truncate" style="color:#c4b5fd">'+esc(s.name)+'</div>'+
+          '<div class="text-xs mt-0.5 truncate" style="color:#5a5a6e">'+esc(s.description||'Sin descripción')+'</div>'+
+          '<div class="flex flex-wrap gap-2 mt-2">'+
+            '<span class="chip">'+(s.executions||0)+' runs</span>'+
+            (date ? '<span class="chip">'+esc(date)+'</span>' : '')+
+            '<span class="chip" style="font-family:monospace;font-size:10px">'+esc((s.id||'').slice(0,10))+'…</span>'+
+          '</div>'+
+        '</div>'+
+        '<div class="script-actions shrink-0">'+
+          '<button class="icon-btn" title="Editar" onclick="editScript(\''+s.id+'\')">'+
+            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>'+
+          '</button>'+
+          '<button class="icon-btn" title="Copiar loadstring" onclick="copyLs(\''+ls.replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">'+
+            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>'+
+          '</button>'+
+          '<button class="icon-btn" title="Copiar ID" onclick="copyLs(\''+s.id+'\')">'+
+            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>'+
+          '</button>'+
+          '<button class="icon-btn danger" title="Eliminar" onclick="delScript(\''+s.id+'\')">'+
+            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>'+
+          '</button>'+
+        '</div>'+
+      '</div>'+
+      '<pre class="text-[11px] overflow-x-auto whitespace-pre-wrap break-all p-3 rounded-lg" style="background:#0c0c12;color:#5a5a6e">'+esc(ls)+'</pre>'+
+    '</div>';
+  }).join('');
+}
+
+function copyLs(text){
+  navigator.clipboard.writeText(text).then(() => toast('Copiado al portapapeles')).catch(() => toast('No se pudo copiar', 'err'));
+}
+
 async function loadScripts(){
   try {
     const r = await fetch('/api/scripts', { headers: headers() });
     if (!r.ok) return;
-    const list = await r.json();
-    const host = location.origin;
-    const el = document.getElementById('scriptsList');
-    if (!list.length) {
-      el.innerHTML = '<div class="card p-8 text-center" style="color:#5a5a6e">No hay scripts. Crea uno.</div>';
-      return;
-    }
-    el.innerHTML = list.map(s => {
-      const ls = 'loadstring(game:HttpGet("'+host+'/api/raw/'+s.id+'"))()';
-      return '<div class="card p-5">'+
-        '<div class="flex justify-between items-start mb-3">'+
-          '<div><div class="font-semibold" style="color:#c4b5fd">'+esc(s.name)+'</div>'+
-          '<div class="text-xs mt-0.5" style="color:#5a5a6e">'+esc(s.description||'Sin descripción')+'</div></div>'+
-          '<span class="badge">'+(s.executions||0)+' runs</span></div>'+
-        '<div class="flex gap-2 mb-3">'+
-          '<button onclick="navigator.clipboard.writeText(\''+ls.replace(/'/g,"\\'")+'\')" class="btn-ghost">Copiar loadstring</button>'+
-          '<button onclick="delScript(\''+s.id+'\')" class="btn-ghost" style="color:#f87171;border-color:#3a1a1a">Eliminar</button></div>'+
-        '<pre class="text-[11px] overflow-x-auto whitespace-pre-wrap break-all p-3 rounded-lg" style="background:#0c0c12;color:#5a5a6e">'+esc(ls)+'</pre></div>';
-    }).join('');
+    allScripts = await r.json();
+    filterScripts();
   } catch {}
+}
+
+async function editScript(id){
+  try {
+    const r = await fetch('/api/scripts/' + id, { headers: headers() });
+    if (!r.ok) { toast('No se pudo cargar el script', 'err'); return; }
+    const s = await r.json();
+    editingId = s.id;
+    document.getElementById('editId').value = s.id;
+    document.getElementById('sName').value = s.name || '';
+    document.getElementById('sDesc').value = s.description || '';
+    document.getElementById('sSource').value = s.source || '';
+    document.getElementById('createTitle').textContent = 'Edit Script';
+    document.getElementById('createSubtitle').textContent = 'Modificando · ' + (s.name || id);
+    document.getElementById('createBtnLabel').textContent = 'Save changes';
+    document.getElementById('createOutWrap').classList.add('hidden');
+    updateLines();
+    go('create');
+    toast('Script cargado para editar');
+  } catch(e) {
+    toast(e.message || 'Error', 'err');
+  }
+}
+
+function resetCreateForm(){
+  editingId = null;
+  document.getElementById('editId').value = '';
+  document.getElementById('sName').value = '';
+  document.getElementById('sDesc').value = '';
+  document.getElementById('sSource').value = '';
+  document.getElementById('createTitle').textContent = 'Create Script';
+  document.getElementById('createSubtitle').textContent = 'Create or modify Lua script';
+  document.getElementById('createBtnLabel').textContent = 'Create';
+  document.getElementById('createOutWrap').classList.add('hidden');
+  updateLines();
 }
 
 async function createScript(){
@@ -520,39 +626,70 @@ async function createScript(){
   const btn = document.getElementById('createBtn');
   const out = document.getElementById('createOut');
   const wrap = document.getElementById('createOutWrap');
+  const editId = document.getElementById('editId').value || editingId;
   if (!name || !source) { wrap.classList.remove('hidden'); out.value = 'Name y source son obligatorios'; return; }
-  btn.disabled = true; btn.textContent = 'Creating...';
+  btn.disabled = true;
+  const prev = document.getElementById('createBtnLabel').textContent;
+  document.getElementById('createBtnLabel').textContent = editId ? 'Saving...' : 'Creating...';
   try {
-    const r = await fetch('/api/scripts', {
-      method:'POST', headers: headers(),
-      body: JSON.stringify({ name, description, source })
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || 'Error');
-    wrap.classList.remove('hidden');
-    out.value = d.loadstring || JSON.stringify(d);
-    const prefCopy = document.getElementById('prefCopy');
-    if (prefCopy && prefCopy.checked && d.loadstring) {
-      try { navigator.clipboard.writeText(d.loadstring); } catch {}
+    let r, d;
+    if (editId) {
+      r = await fetch('/api/scripts/' + editId, {
+        method: 'PUT', headers: headers(),
+        body: JSON.stringify({ name, description, source })
+      });
+      d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Error al guardar');
+      toast('Script actualizado');
+      wrap.classList.remove('hidden');
+      const host = location.origin;
+      out.value = 'loadstring(game:HttpGet("'+host+'/api/raw/'+editId+'"))()';
+      const prefCopy = document.getElementById('prefCopy');
+      if (prefCopy && prefCopy.checked) { try { navigator.clipboard.writeText(out.value); } catch {} }
+      resetCreateForm();
+      loadScripts(); loadStats();
+      go('scripts');
+    } else {
+      r = await fetch('/api/scripts', {
+        method:'POST', headers: headers(),
+        body: JSON.stringify({ name, description, source })
+      });
+      d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Error');
+      wrap.classList.remove('hidden');
+      out.value = d.loadstring || JSON.stringify(d);
+      const prefCopy = document.getElementById('prefCopy');
+      if (prefCopy && prefCopy.checked && d.loadstring) {
+        try { navigator.clipboard.writeText(d.loadstring); } catch {}
+      }
+      toast('Script creado');
+      document.getElementById('sName').value = '';
+      document.getElementById('sDesc').value = '';
+      document.getElementById('sSource').value = '';
+      updateLines();
+      loadScripts(); loadStats();
     }
-    document.getElementById('sName').value = '';
-    document.getElementById('sDesc').value = '';
-    document.getElementById('sSource').value = '';
-    updateLines();
-    loadScripts(); loadStats();
   } catch(e) {
     wrap.classList.remove('hidden');
     out.value = 'Error: ' + e.message;
+    toast(e.message, 'err');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg> Create';
+    document.getElementById('createBtnLabel').textContent = prev === 'Saving...' || prev === 'Creating...' ? (editId ? 'Save changes' : 'Create') : prev;
+    if (!editId) document.getElementById('createBtnLabel').textContent = 'Create';
   }
 }
 
 async function delScript(id){
-  if (!confirm('¿Eliminar este script?')) return;
-  await fetch('/api/scripts/'+id, { method:'DELETE', headers: headers() });
-  loadScripts(); loadStats(); loadAnalytics();
+  if (!confirm('¿Eliminar este script de forma permanente?')) return;
+  try {
+    const r = await fetch('/api/scripts/' + id, { method: 'DELETE', headers: headers() });
+    if (!r.ok) throw new Error('No se pudo eliminar');
+    toast('Script eliminado');
+    loadScripts(); loadStats(); loadAnalytics();
+  } catch(e) {
+    toast(e.message || 'Error', 'err');
+  }
 }
 
 function daysAgo(n){
