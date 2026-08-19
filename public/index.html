@@ -136,6 +136,10 @@
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
           Lua Scripts
         </button>
+        <button class="nav-item" data-page="hub" onclick="go('hub')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+          Script Hub
+        </button>
         <button class="nav-item" data-page="create" onclick="if(!editingId)resetCreateForm();go('create')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
           Create Script
@@ -214,6 +218,47 @@
           <div id="scriptsList" class="grid gap-3"></div>
         </section>
 
+
+        <!-- SCRIPT HUB -->
+        <section id="page-hub" class="page hidden">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <div>
+              <h1 class="text-2xl font-bold">Script Hub</h1>
+              <p class="text-xs mt-1" style="color:#5a5a6e">Scripts públicos de la comunidad · mínimo 500 ejecuciones para publicar</p>
+            </div>
+            <button onclick="document.getElementById('hubPublishCard').classList.toggle('hidden')" class="btn-primary text-sm py-2.5 px-4">+ Publicar</button>
+          </div>
+
+          <div id="hubPublishCard" class="card p-6 max-w-2xl mb-6 hidden">
+            <div class="text-sm font-semibold mb-1">Publicar en el Hub</div>
+            <div class="text-xs mb-4" style="color:#5a5a6e">Solo scripts tuyos con <b style="color:#a78bfa">500+ ejecuciones</b>. Todos podrán ver el loadstring.</div>
+            <div class="space-y-4">
+              <div>
+                <label class="field">Tu script (500+ runs) <span class="req">*</span></label>
+                <select id="hubScriptSelect"></select>
+              </div>
+              <div>
+                <label class="field">Nombre público <span class="req">*</span></label>
+                <input id="hubName" placeholder="Nombre que verán todos"/>
+              </div>
+              <div>
+                <label class="field">Descripción</label>
+                <input id="hubDesc" placeholder="Opcional"/>
+              </div>
+              <div class="flex gap-3">
+                <button onclick="publishHub()" class="btn-primary" id="hubPublishBtn">Publicar</button>
+                <button onclick="document.getElementById('hubPublishCard').classList.add('hidden')" class="btn-ghost">Cancelar</button>
+              </div>
+              <p id="hubErr" class="text-sm text-red-400 hidden"></p>
+            </div>
+          </div>
+
+          <div class="search-box mb-4" style="max-width:320px">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input id="hubSearch" placeholder="Buscar en el hub..." oninput="filterHub()"/>
+          </div>
+          <div id="hubList" class="grid gap-3"></div>
+        </section>
         <!-- CREATE SCRIPT (estilo UNKIE) -->
         <section id="page-create" class="page hidden">
           <div class="card max-w-3xl overflow-hidden">
@@ -468,7 +513,7 @@ window.onload = function(){
   updateLines();
 };
 
-const pageNames = { overview:'Overview', scripts:'Lua Scripts', create:'Create Script', executions:'Analytics', apiinfo:'API Info', settings:'Settings' };
+const pageNames = { overview:'Overview', scripts:'Lua Scripts', hub:'Script Hub', create:'Create Script', executions:'Analytics', apiinfo:'API Info', settings:'Settings' };
 
 function go(p){
   document.querySelectorAll('.page').forEach(x => x.classList.add('hidden'));
@@ -478,6 +523,7 @@ function go(p){
   if (btn) btn.classList.add('active');
   document.getElementById('breadcrumb').textContent = pageNames[p] || p;
   if (p === 'scripts') loadScripts();
+  if (p === 'hub') loadHub();
   if (p === 'overview') { loadStats(); loadAnalytics(); }
   if (p === 'executions') loadAnalytics();
 }
@@ -690,6 +736,135 @@ async function delScript(id){
   } catch(e) {
     toast(e.message || 'Error', 'err');
   }
+}
+
+
+let hubAll = [];
+
+async function loadHub(){
+  try {
+    const r = await fetch('/api/hub');
+    if (!r.ok) return;
+    hubAll = await r.json();
+    filterHub();
+    await fillHubSelect();
+  } catch(e) { console.error(e); }
+}
+
+function filterHub(){
+  const q = (document.getElementById('hubSearch')?.value || '').toLowerCase().trim();
+  const list = q ? hubAll.filter(h => (h.name||'').toLowerCase().includes(q) || (h.ownerUsername||'').toLowerCase().includes(q) || (h.description||'').toLowerCase().includes(q)) : hubAll;
+  renderHub(list);
+}
+
+function renderHub(list){
+  const el = document.getElementById('hubList');
+  if (!el) return;
+  if (!list.length) {
+    el.innerHTML = '<div class="card empty-state"><div class="text-sm">No hay scripts públicos todavía</div><div class="text-xs mt-2">Publica el tuyo cuando tenga 500+ ejecuciones</div></div>';
+    return;
+  }
+  el.innerHTML = list.map(h => {
+    const id = h._id || h.id;
+    const mine = false; // filled below with data attr
+    return '<div class="card p-5" data-hub-id="'+esc(id)+'">'+
+      '<div class="flex justify-between items-start gap-3 mb-3">'+
+        '<div class="min-w-0">'+
+          '<div class="font-semibold" style="color:#c4b5fd">'+esc(h.name)+'</div>'+
+          '<div class="text-xs mt-0.5" style="color:#5a5a6e">'+esc(h.description||'')+'</div>'+
+          '<div class="flex flex-wrap gap-2 mt-2">'+
+            '<span class="chip">@'+esc(h.ownerUsername||'user')+'</span>'+
+            '<span class="chip">'+(h.executionsAtPublish||0)+' runs al publicar</span>'+
+            '<span class="chip">'+(h.views||0)+' views</span>'+
+          '</div>'+
+        '</div>'+
+        '<div class="script-actions">'+
+          '<button class="icon-btn" title="Copiar loadstring" onclick="copyHubLs(\''+id+'\',\''+ (h.loadstring||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'") +'\')">'+
+            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>'+
+          '</button>'+
+          '<button class="icon-btn danger hub-del" data-owner="'+esc(h.ownerId||'')+'" title="Quitar del hub" onclick="delHub(\''+id+'\')" style="display:none">'+
+            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>'+
+          '</button>'+
+        '</div>'+
+      '</div>'+
+      '<pre class="text-[11px] overflow-x-auto whitespace-pre-wrap break-all p-3 rounded-lg" style="background:#0c0c12;color:#5a5a6e">'+esc(h.loadstring)+'</pre>'+
+    '</div>';
+  }).join('');
+  // show delete for own items
+  try {
+    const payload = JSON.parse(atob((token.split('.')[1]||'').replace(/-/g,'+').replace(/_/g,'/')));
+    const uid = payload.sub;
+    document.querySelectorAll('.hub-del').forEach(btn => {
+      if (btn.getAttribute('data-owner') === uid) btn.style.display = 'inline-flex';
+    });
+  } catch {}
+}
+
+function copyHubLs(id, ls){
+  copyLs(ls);
+  fetch('/api/hub/'+id+'/view', { method:'POST' }).catch(()=>{});
+}
+
+async function fillHubSelect(){
+  const sel = document.getElementById('hubScriptSelect');
+  if (!sel) return;
+  try {
+    const r = await fetch('/api/scripts', { headers: headers() });
+    if (!r.ok) return;
+    const list = await r.json();
+    const ok = list.filter(s => (s.executions||0) >= 500);
+    if (!ok.length) {
+      sel.innerHTML = '<option value="">Ningún script con 500+ runs</option>';
+      return;
+    }
+    sel.innerHTML = ok.map(s => '<option value="'+s.id+'">'+esc(s.name)+' ('+(s.executions||0)+' runs)</option>').join('');
+    const first = ok[0];
+    if (first && !document.getElementById('hubName').value) {
+      document.getElementById('hubName').value = first.name || '';
+    }
+  } catch {}
+}
+
+async function publishHub(){
+  const scriptId = document.getElementById('hubScriptSelect').value;
+  const name = document.getElementById('hubName').value.trim();
+  const description = document.getElementById('hubDesc').value.trim();
+  const err = document.getElementById('hubErr');
+  const btn = document.getElementById('hubPublishBtn');
+  err.classList.add('hidden');
+  if (!scriptId) { err.textContent = 'Selecciona un script con 500+ ejecuciones'; err.classList.remove('hidden'); return; }
+  if (!name) { err.textContent = 'Pon un nombre'; err.classList.remove('hidden'); return; }
+  btn.disabled = true; btn.textContent = 'Publicando...';
+  try {
+    const r = await fetch('/api/hub', {
+      method:'POST', headers: headers(),
+      body: JSON.stringify({ scriptId, name, description })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    toast('Publicado en el Hub');
+    document.getElementById('hubPublishCard').classList.add('hidden');
+    document.getElementById('hubName').value = '';
+    document.getElementById('hubDesc').value = '';
+    loadHub();
+  } catch(e) {
+    err.textContent = e.message;
+    err.classList.remove('hidden');
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Publicar';
+  }
+}
+
+async function delHub(id){
+  if (!confirm('¿Quitar este script del Hub público?')) return;
+  try {
+    const r = await fetch('/api/hub/'+id, { method:'DELETE', headers: headers() });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    toast('Eliminado del Hub');
+    loadHub();
+  } catch(e) { toast(e.message, 'err'); }
 }
 
 function daysAgo(n){
