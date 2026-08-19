@@ -15,7 +15,13 @@ const MONGO_URI = process.env.MONGO_URI || '';
 const OBFUSCATOR_URL = process.env.OBFUSCATOR_URL || 'https://qyrexobf.onrender.com/api/obfuscate';
 const PORT = process.env.PORT || 3000;
 
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({
+  contentSecurityPolicy: false,
+  frameguard: { action: 'deny' },
+  referrerPolicy: { policy: 'no-referrer' },
+  hidePoweredBy: true
+}));
+app.disable('x-powered-by');
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
@@ -339,6 +345,67 @@ async function obfuscateWithQyrex(code) {
   return data.code;
 }
 
+function xorBytes(buf, key) {
+  const out = Buffer.alloc(buf.length);
+  for (let i = 0; i < buf.length; i++) out[i] = buf[i] ^ key[i % key.length];
+  return out;
+}
+
+/** 5 capas: XOR aleatorio + Base64 repetido (Lua decoder al final) */
+async function resolveObfuscated(source, mode) {
+  // mode: 'none' | 'qrex' | 'local'
+  if (mode === 'none') return { code: source, doObfuscate: false, obfMode: 'none' };
+  if (mode === 'local') return { code: localObfuscate(source), doObfuscate: true, obfMode: 'local' };
+  const code = await obfuscateWithQyrex(source);
+  return { code, doObfuscate: true, obfMode: 'qrex' };
+}
+
+function localObfuscate(code) {
+  const src = Buffer.from(String(code), 'utf8');
+  let data = src;
+  const keys = [];
+  for (let layer = 0; layer < 5; layer++) {
+    const key = crypto.randomBytes(16);
+    keys.push(key);
+    data = xorBytes(data, key);
+    data = Buffer.from(data.toString('base64'), 'utf8');
+  }
+  const keyLits = keys.map(k => '{' + Array.from(k).join(',') + '}').join(',');
+  const payload = data.toString('utf8').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const lines = [
+    '-- Qrex local protect (5x XOR+B64)',
+    'local _k={' + keyLits + '}',
+    'local _d="' + payload + '"',
+    'local function _xb(s,key)',
+    '  local t={}',
+    '  for i=1,#s do t[i]=string.char(bit32.bxor(string.byte(s,i), key[((i-1)%#key)+1])) end',
+    '  return table.concat(t)',
+    'end',
+    'local function _b64(data)',
+    "  local b='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'",
+    "  data=string.gsub(data,'[^'..b..'=]','')",
+    "  return (data:gsub('.',function(x)",
+    "    if x=='=' then return '' end",
+    "    local r,f='',(b:find(x)-1)",
+    "    for i=6,1,-1 do r=r..(f%2^i - f%2^(i-1) > 0 and '1' or '0') end",
+    '    return r',
+    "  end):gsub('%d%d%d?%d?%d?%d?%d?%d?',function(x)",
+    '    if #x~=8 then return \'\' end',
+    '    local c=0',
+    "    for i=1,8 do c=c+(x:sub(i,i)=='1' and 2^(8-i) or 0) end",
+    '    return string.char(c)',
+    '  end))',
+    'end',
+    'for i=5,1,-1 do',
+    '  _d=_b64(_d)',
+    '  _d=_xb(_d,_k[i])',
+    'end',
+    'assert((loadstring or load)(_d))()'
+  ];
+  return lines.join('\n');
+}
+
+
 app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
@@ -492,18 +559,21 @@ app.post('/api/scripts', auth, needMongo, async (req, res) => {
       pid = String(prov._id);
     }
 
-    const wantObf = req.body?.doObfuscate !== false && req.body?.doObfuscate !== 'false';
-    let outCode = source;
-    if (wantObf) {
-      outCode = await obfuscateWithQyrex(source);
+    let obfMode = (req.body?.obfMode || '').toString();
+    if (!obfMode) {
+      const wantObf = req.body?.doObfuscate !== false && req.body?.doObfuscate !== 'false';
+      obfMode = wantObf ? 'qrex' : 'none';
     }
+    if (!['none', 'qrex', 'local'].includes(obfMode)) obfMode = 'qrex';
+    const resolved = await resolveObfuscated(source, obfMode);
     const doc = await Script.create({
       ownerId: req.user.sub,
       name,
       description: description || '',
       source,
-      obfuscated: outCode,
-      doObfuscate: !!wantObf,
+      obfuscated: resolved.code,
+      doObfuscate: resolved.doObfuscate,
+      obfMode: resolved.obfMode,
       keyMode: mode,
       providerId: pid,
       providerName
@@ -557,23 +627,24 @@ app.put('/api/scripts/:id', auth, needMongo, async (req, res) => {
         s.providerId = ''; s.providerName = '';
       }
     }
-    if (req.body?.doObfuscate !== undefined) {
+    if (req.body?.obfMode && ['none','qrex','local'].includes(req.body.obfMode)) {
+      s.obfMode = req.body.obfMode;
+      s.doObfuscate = s.obfMode !== 'none';
+    } else if (req.body?.doObfuscate !== undefined) {
       s.doObfuscate = req.body.doObfuscate !== false && req.body.doObfuscate !== 'false';
+      s.obfMode = s.doObfuscate ? (s.obfMode === 'local' ? 'local' : 'qrex') : 'none';
     }
     if (source) {
       s.source = source;
-      if (s.doObfuscate !== false) {
-        s.obfuscated = await obfuscateWithQyrex(source);
-      } else {
-        s.obfuscated = source;
-      }
-    } else if (req.body?.doObfuscate !== undefined && s.source) {
-      // re-process existing source with new setting
-      if (s.doObfuscate) {
-        s.obfuscated = await obfuscateWithQyrex(s.source);
-      } else {
-        s.obfuscated = s.source;
-      }
+      const resolved = await resolveObfuscated(source, s.obfMode || (s.doObfuscate ? 'qrex' : 'none'));
+      s.obfuscated = resolved.code;
+      s.doObfuscate = resolved.doObfuscate;
+      s.obfMode = resolved.obfMode;
+    } else if ((req.body?.obfMode || req.body?.doObfuscate !== undefined) && s.source) {
+      const resolved = await resolveObfuscated(s.source, s.obfMode || 'qrex');
+      s.obfuscated = resolved.code;
+      s.doObfuscate = resolved.doObfuscate;
+      s.obfMode = resolved.obfMode;
     }
     await s.save();
     res.json({ success: true, id: s.id });
