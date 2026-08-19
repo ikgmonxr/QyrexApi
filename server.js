@@ -18,20 +18,89 @@ const PORT = process.env.PORT || 3000;
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
-app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
+
+function clientIp(req) {
+  const xf = req.headers['x-forwarded-for'];
+  if (xf) return String(xf).split(',')[0].trim();
+  return (req.socket?.remoteAddress || req.ip || '?').replace(/^::ffff:/, '');
+}
+
+// --- Rate limits por capa ---
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => clientIp(req),
+  message: { error: 'Demasiadas peticiones. Espera un poco.' }
+});
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  keyGenerator: (req) => clientIp(req),
+  message: { error: 'Demasiados intentos de login/registro' }
+});
+const rawLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20, // max 20 hits / minuto / IP al raw
+  keyGenerator: (req) => clientIp(req),
+  message: { error: 'Rate limit raw: máx 20/min por IP' }
+});
+const rawBurstLimiter = rateLimit({
+  windowMs: 10 * 1000,
+  max: 8, // anti-burst 8 / 10s
+  keyGenerator: (req) => clientIp(req),
+  message: { error: 'Burst bloqueado' }
+});
+const verifyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 40,
+  keyGenerator: (req) => clientIp(req),
+  message: { success: false, error: 'Rate limit verify' }
+});
+
+app.use('/api/', apiLimiter);
+app.use('/api/auth/', authLimiter);
+
+// Contadores en memoria para auto-ban
+const abuseHits = new Map(); // ip -> { n, t }
+const AUTO_BAN_THRESHOLD = 80; // hits raw en 2 min
+const AUTO_BAN_WINDOW = 2 * 60 * 1000;
+
+function trackAbuse(ip) {
+  const now = Date.now();
+  let e = abuseHits.get(ip);
+  if (!e || now - e.t > AUTO_BAN_WINDOW) e = { n: 0, t: now };
+  e.n += 1;
+  e.t = e.t || now;
+  abuseHits.set(ip, e);
+  return e.n;
+}
+
+// Limpieza periódica
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, e] of abuseHits) {
+    if (now - e.t > AUTO_BAN_WINDOW * 2) abuseHits.delete(ip);
+  }
+}, 60000).unref?.();
 
 app.use(async (req, res, next) => {
   try {
-    if (!req.path.startsWith('/api')) return next();
-    const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
-    if (!ip || mongoose.connection.readyState !== 1) return next();
-    const Model = mongoose.models.QrexBlacklistIP;
-    if (!Model) return next();
-    const banned = await Model.findOne({ ip }).lean();
-    if (banned) return res.status(403).json({ error: 'IP bloqueada' });
+    if (!req.path.startsWith('/api') && !req.originalUrl.startsWith('/api')) return next();
+    const ip = clientIp(req);
+    if (!ip || ip === '?') return next();
+    if (mongoose.connection.readyState === 1) {
+      const Model = mongoose.models.QrexBlacklistIP;
+      if (Model) {
+        const banned = await Model.findOne({ ip }).lean();
+        if (banned) return res.status(403).json({ error: 'IP bloqueada', reason: banned.reason || 'abuse' });
+      }
+    }
     next();
   } catch { next(); }
 });
+
 
 let mongoReady = false;
 
@@ -498,7 +567,22 @@ app.delete('/api/scripts/:id', auth, needMongo, async (req, res) => {
   res.json({ success: true });
 });
 
-app.get('/api/raw/:id', async (req, res) => {
+app.get('/api/raw/:id', rawBurstLimiter, rawLimiter, async (req, res) => {
+  const ip = clientIp(req);
+  const hits = trackAbuse(ip);
+  if (hits >= AUTO_BAN_THRESHOLD) {
+    try {
+      if (mongoose.connection.readyState === 1 && mongoose.models.QrexBlacklistIP) {
+        await mongoose.models.QrexBlacklistIP.findOneAndUpdate(
+          { ip },
+          { ip, reason: 'Auto-ban: flood /api/raw (' + hits + ' hits/2min)', createdBy: 'system' },
+          { upsert: true }
+        );
+      }
+    } catch {}
+    return res.status(403).type('text/plain').send('-- banned');
+  }
+
   const ua = (req.headers['user-agent'] || '').toLowerCase();
   const accept = (req.headers['accept'] || '').toLowerCase();
   const isBrowser =
@@ -554,13 +638,22 @@ app.get('/api/raw/:id', async (req, res) => {
     return res.status(503).type('text/plain').send('-- db offline');
   }
 
+  // límite por script+IP (60/min)
+  const sk = ip + ':' + req.params.id;
+  const now = Date.now();
+  if (!global.__rawScriptHits) global.__rawScriptHits = new Map();
+  let se = global.__rawScriptHits.get(sk);
+  if (!se || now - se.t > 60000) se = { n: 0, t: now };
+  se.n++;
+  global.__rawScriptHits.set(sk, se);
+  if (se.n > 60) return res.status(429).type('text/plain').send('-- slow down');
+
   const s = await Script.findOne({ id: req.params.id });
   if (!s) return res.status(404).type('text/plain').send('-- not found');
 
   s.executions += 1;
   await s.save();
 
-  const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '?';
   await Execution.create({
     scriptId: s.id,
     scriptName: s.name,
@@ -571,7 +664,9 @@ app.get('/api/raw/:id', async (req, res) => {
 
   fireWebhooks(s.ownerId, 'script_exec', { scriptId: s.id, name: s.name, ip: String(ip).split(',')[0] });
 
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Robots-Tag', 'noindex');
   res.type('text/plain').send(s.obfuscated);
 });
 
@@ -831,7 +926,7 @@ app.post('/api/keys/:id/toggle', auth, needMongo, async (req, res) => {
 });
 
 // Verificación pública (Roblox / executors)
-app.post('/api/keys/verify', needMongo, async (req, res) => {
+app.post('/api/keys/verify', verifyLimiter, needMongo, async (req, res) => {
   try {
     const { key, hwid, provider } = req.body || {};
     const kstr = (key || '').trim();
@@ -1014,6 +1109,13 @@ app.get('/api/status', async (req, res) => {
     mongoPingMs: mongoMs,
     uptime: process.uptime(),
     freeScriptLimit: FREE_SCRIPT_LIMIT,
+    security: {
+      rawPerIpPerMin: 20,
+      rawBurstPer10s: 8,
+      autoBanRawHits: AUTO_BAN_THRESHOLD,
+      apiPer15min: 200,
+      authPer15min: 30
+    },
     time: new Date().toISOString()
   });
 });
