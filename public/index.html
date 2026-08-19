@@ -1573,7 +1573,7 @@ async function runPlayground(){
   try {
     const r = await fetch(path, opts);
     const t = await r.text();
-    document.getElementById('pgOut').textContent = 'HTTP ' + r.status + '\\n\\n' + t;
+    document.getElementById('pgOut').textContent = 'HTTP ' + r.status + '\n\n' + t;
   } catch(e) {
     document.getElementById('pgOut').textContent = e.message;
   }
@@ -1593,7 +1593,7 @@ async function loadAdminBlacklist(){
   try {
     const list = await fetch('/api/admin/blacklist', { headers: headers() }).then(r=>r.json());
     document.getElementById('adminBlacklist').innerHTML = (list||[]).map(b =>
-      '<div class="flex justify-between py-1"><span>'+esc(b.ip)+' — '+esc(b.reason||'')+'</span><button class="btn-ghost text-[10px]" onclick="adminDelBl(\\''+b._id+'\\')">x</button></div>'
+      '<div class="flex justify-between py-1"><span>'+esc(b.ip)+' — '+esc(b.reason||'')+'</span><button class="btn-ghost text-[10px]" onclick="adminDelBl(\''+b._id+'\')">x</button></div>'
     ).join('') || 'Vacío';
   } catch {}
 }
@@ -1607,8 +1607,8 @@ async function showVersions(scriptId){
   try {
     const list = await fetch('/api/scripts/'+scriptId+'/versions', { headers: headers() }).then(r=>r.json());
     if (!list.length) { toast('Sin versiones guardadas'); return; }
-    const pick = list.map((v,i)=> (i+1)+'. '+(v.createdAt?new Date(v.createdAt).toLocaleString():v._id)).join('\\n');
-    const n = prompt('Versiones (número a restaurar):\\n'+pick, '1');
+    const pick = list.map((v,i)=> (i+1)+'. '+(v.createdAt?new Date(v.createdAt).toLocaleString():v._id)).join('\n');
+    const n = prompt('Versiones (número a restaurar):\n'+pick, '1');
     const idx = Number(n)-1;
     if (idx<0 || idx>=list.length) return;
     const r = await fetch('/api/scripts/'+scriptId+'/versions/'+list[idx]._id+'/restore', { method:'POST', headers: headers() });
