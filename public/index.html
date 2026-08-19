@@ -140,6 +140,10 @@
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
           Script Hub
         </button>
+        <button class="nav-item" data-page="keys" onclick="go('keys')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+          Key System
+        </button>
         <button class="nav-item" data-page="create" onclick="if(!editingId)resetCreateForm();go('create')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
           Create Script
@@ -268,6 +272,74 @@
           </div>
           <div id="hubList" class="grid gap-3"></div>
         </section>
+
+        <!-- KEY SYSTEM -->
+        <section id="page-keys" class="page hidden">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <div>
+              <h1 class="text-2xl font-bold">Key System</h1>
+              <p class="text-xs mt-1" style="color:#5a5a6e">Providers · Keys · HWID · Verificación Roblox</p>
+            </div>
+            <div class="flex gap-2">
+              <button onclick="document.getElementById('provCard').classList.toggle('hidden')" class="btn-ghost text-sm">+ Provider</button>
+              <button onclick="document.getElementById('keyGenCard').classList.toggle('hidden')" class="btn-primary text-sm py-2.5 px-4">+ Generate Keys</button>
+            </div>
+          </div>
+
+          <div id="provCard" class="card p-6 max-w-xl mb-6 hidden">
+            <div class="text-sm font-semibold mb-4">Create Provider</div>
+            <div class="space-y-3">
+              <div><label class="field">Provider name <span class="req">*</span></label><input id="provName" placeholder="MyScript"/></div>
+              <div class="grid grid-cols-2 gap-3">
+                <div><label class="field">Key validity (hours)</label><input id="provHours" type="number" value="24" min="1"/></div>
+                <div><label class="field">HWID limit</label><input id="provHwid" type="number" value="1" min="1" max="10"/></div>
+              </div>
+              <button class="btn-primary" onclick="createProvider()">Create Provider</button>
+            </div>
+          </div>
+
+          <div id="keyGenCard" class="card p-6 max-w-xl mb-6 hidden">
+            <div class="text-sm font-semibold mb-4">Generate Keys</div>
+            <div class="space-y-3">
+              <div><label class="field">Provider <span class="req">*</span></label><select id="keyProvSelect"></select></div>
+              <div class="grid grid-cols-3 gap-3">
+                <div><label class="field">Amount</label><input id="keyAmount" type="number" value="1" min="1" max="50"/></div>
+                <div><label class="field">Hours (0=∞)</label><input id="keyHours" type="number" value="24" min="0"/></div>
+                <div><label class="field">HWID limit</label><input id="keyHwidLim" type="number" value="1" min="1" max="10"/></div>
+              </div>
+              <div><label class="field">Note</label><input id="keyNote" placeholder="opcional"/></div>
+              <button class="btn-primary" onclick="generateKeys()">Generate</button>
+              <textarea id="keyGenOut" readonly class="h-24 font-mono text-xs hidden" style="color:#34d399"></textarea>
+            </div>
+          </div>
+
+          <div class="grid lg:grid-cols-2 gap-4 mb-6">
+            <div class="card p-5">
+              <div class="text-sm font-semibold mb-3">Providers</div>
+              <div id="provList" class="space-y-2 text-sm"></div>
+            </div>
+            <div class="card p-5">
+              <div class="text-sm font-semibold mb-2">Loader Lua (copia en tu script)</div>
+              <p class="text-xs mb-3" style="color:#5a5a6e">Cambia PROVIDER_NAME. Verifica key + HWID contra QrexApi.</p>
+              <pre id="loaderSnippet" class="text-[10px] overflow-x-auto whitespace-pre-wrap break-all p-3 rounded-lg font-mono" style="background:#0c0c12;color:#a0a0b0;max-height:220px"></pre>
+              <button class="btn-ghost text-xs mt-2" onclick="copyLs(document.getElementById('loaderSnippet').textContent)">Copiar loader</button>
+            </div>
+          </div>
+
+          <div class="card overflow-hidden">
+            <div class="px-5 py-3 border-b text-sm font-semibold flex justify-between items-center" style="border-color:#1e1e2a">
+              <span>Keys</span>
+              <button class="btn-ghost text-xs" onclick="loadKeysTable()">Refresh</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table>
+                <thead><tr><th>Key</th><th>Provider</th><th>HWID</th><th>Expires</th><th>Uses</th><th></th></tr></thead>
+                <tbody id="keysTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <!-- CREATE SCRIPT (estilo UNKIE) -->
         <section id="page-create" class="page hidden">
           <div class="card max-w-3xl overflow-hidden">
@@ -612,7 +684,7 @@ window.onload = function(){
   updateLines();
 };
 
-const pageNames = { overview:'Overview', scripts:'Lua Scripts', hub:'Script Hub', create:'Create Script', executions:'Analytics', apiinfo:'API Info', settings:'Settings', admin:'Admin Panel' };
+const pageNames = { overview:'Overview', scripts:'Lua Scripts', hub:'Script Hub', keys:'Key System', create:'Create Script', executions:'Analytics', apiinfo:'API Info', settings:'Settings', admin:'Admin Panel' };
 
 function go(p){
   document.querySelectorAll('.page').forEach(x => x.classList.add('hidden'));
@@ -623,6 +695,7 @@ function go(p){
   document.getElementById('breadcrumb').textContent = pageNames[p] || p;
   if (p === 'scripts') loadScripts();
   if (p === 'hub') loadHub();
+  if (p === 'keys') loadKeysPage();
   if (p === 'admin') loadAdmin();
   if (p === 'overview') { loadStats(); loadAnalytics(); }
   if (p === 'executions') loadAnalytics();
@@ -1041,6 +1114,169 @@ async function delHub(id){
     toast('Eliminado del Hub');
     loadHub();
   } catch(e) { toast(e.message, 'err'); }
+}
+
+
+async function loadKeysPage(){
+  await loadProviders();
+  await loadKeysTable();
+  updateLoaderSnippet();
+}
+
+async function loadProviders(){
+  try {
+    const r = await fetch('/api/providers', { headers: headers() });
+    if (!r.ok) return;
+    const list = await r.json();
+    const el = document.getElementById('provList');
+    const sel = document.getElementById('keyProvSelect');
+    if (!list.length) {
+      el.innerHTML = '<div style="color:#5a5a6e">No hay providers. Crea uno.</div>';
+      sel.innerHTML = '<option value="">—</option>';
+      return;
+    }
+    el.innerHTML = list.map(p =>
+      '<div class="flex justify-between items-center py-2 border-b" style="border-color:#1a1a24">'+
+        '<div><span class="font-medium" style="color:#c4b5fd">'+esc(p.name)+'</span>'+
+        '<div class="text-xs" style="color:#5a5a6e">'+p.keyValidityHours+'h · HWID '+p.hwidLimit+(p.enabled===false?' · OFF':'')+'</div></div>'+
+        '<button class="icon-btn danger" title="Eliminar" onclick="delProvider(\''+p._id+'\')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>'+
+      '</div>'
+    ).join('');
+    sel.innerHTML = list.map(p => '<option value="'+p._id+'">'+esc(p.name)+'</option>').join('');
+  } catch(e) { console.error(e); }
+}
+
+async function createProvider(){
+  const name = document.getElementById('provName').value.trim();
+  const keyValidityHours = document.getElementById('provHours').value;
+  const hwidLimit = document.getElementById('provHwid').value;
+  try {
+    const r = await fetch('/api/providers', {
+      method:'POST', headers: headers(),
+      body: JSON.stringify({ name, keyValidityHours, hwidLimit })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    toast('Provider creado');
+    document.getElementById('provName').value = '';
+    document.getElementById('provCard').classList.add('hidden');
+    loadProviders();
+    updateLoaderSnippet();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function delProvider(id){
+  if (!confirm('¿Eliminar provider y sus keys?')) return;
+  await fetch('/api/providers/'+id, { method:'DELETE', headers: headers() });
+  toast('Provider eliminado');
+  loadKeysPage();
+}
+
+async function generateKeys(){
+  const providerId = document.getElementById('keyProvSelect').value;
+  const amount = document.getElementById('keyAmount').value;
+  const validityHours = document.getElementById('keyHours').value;
+  const hwidLimit = document.getElementById('keyHwidLim').value;
+  const note = document.getElementById('keyNote').value;
+  if (!providerId) { toast('Elige provider', 'err'); return; }
+  try {
+    const r = await fetch('/api/keys', {
+      method:'POST', headers: headers(),
+      body: JSON.stringify({ providerId, amount, validityHours: Number(validityHours), hwidLimit, note })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    const keys = (d.keys || []).map(k => k.key).join('\n');
+    const out = document.getElementById('keyGenOut');
+    out.classList.remove('hidden');
+    out.value = keys;
+    toast((d.keys||[]).length + ' key(s) generadas');
+    loadKeysTable();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function loadKeysTable(){
+  try {
+    const r = await fetch('/api/keys', { headers: headers() });
+    if (!r.ok) return;
+    const list = await r.json();
+    const tb = document.getElementById('keysTable');
+    if (!list.length) {
+      tb.innerHTML = '<tr><td colspan="6" class="text-center py-8" style="color:#5a5a6e">Sin keys</td></tr>';
+      return;
+    }
+    tb.innerHTML = list.map(k => {
+      const exp = k.expiresAt ? new Date(k.expiresAt).toLocaleString() : '∞';
+      const hw = (k.hwids||[]).length + '/' + (k.hwidLimit||1);
+      const off = k.enabled === false;
+      return '<tr style="'+(off?'opacity:.5':'')+'">'+
+        '<td class="font-mono text-xs">'+esc(k.key)+' <button class="btn-ghost text-[10px] ml-1" onclick="copyLs(\''+k.key+'\')">copy</button></td>'+
+        '<td>'+esc(k.providerName)+'</td>'+
+        '<td>'+hw+'</td>'+
+        '<td class="text-xs" style="color:#8b8b9e">'+esc(exp)+'</td>'+
+        '<td>'+(k.uses||0)+'</td>'+
+        '<td class="script-actions">'+
+          '<button class="icon-btn" title="Reset HWID" onclick="resetHwid(\''+k._id+'\')">↺</button>'+
+          '<button class="icon-btn" title="On/Off" onclick="toggleKey(\''+k._id+'\')">'+(off?'ON':'OFF')+'</button>'+
+          '<button class="icon-btn danger" onclick="delKey(\''+k._id+'\')">×</button>'+
+        '</td></tr>';
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function resetHwid(id){
+  await fetch('/api/keys/'+id+'/reset-hwid', { method:'POST', headers: headers() });
+  toast('HWID reseteado');
+  loadKeysTable();
+}
+async function toggleKey(id){
+  await fetch('/api/keys/'+id+'/toggle', { method:'POST', headers: headers() });
+  loadKeysTable();
+}
+async function delKey(id){
+  if (!confirm('¿Borrar key?')) return;
+  await fetch('/api/keys/'+id, { method:'DELETE', headers: headers() });
+  toast('Key eliminada');
+  loadKeysTable();
+}
+
+function updateLoaderSnippet(){
+  const base = location.origin;
+  const sel = document.getElementById('keyProvSelect');
+  const provName = sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : 'MyProvider';
+  const snip = `-- QrexApi Key Loader
+local HttpService = game:GetService("HttpService")
+local cfg = {
+  api = "${base}",
+  provider = "${provName.replace(/"/g, '')}",
+}
+local function getHwid()
+  local ok, id = pcall(function()
+    return game:GetService("RbxAnalyticsService"):GetClientId()
+  end)
+  return ok and id or tostring(game.Players.LocalPlayer.UserId)
+end
+local function verify(key)
+  local body = HttpService:JSONEncode({ key = key, hwid = getHwid(), provider = cfg.provider })
+  local res = request({
+    Url = cfg.api .. "/api/keys/verify",
+    Method = "POST",
+    Headers = { ["Content-Type"] = "application/json" },
+    Body = body
+  })
+  if not res or not res.Body then return false end
+  local ok, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
+  return ok and data and data.success
+end
+-- Ejemplo:
+-- if verify("TU-KEY-AQUI") then
+--   print("OK")
+--   -- load tu script
+-- else
+--   warn("Key inválida")
+-- end`
+  const el = document.getElementById('loaderSnippet');
+  if (el) el.textContent = snip;
 }
 
 function daysAgo(n){
