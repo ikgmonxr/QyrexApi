@@ -1,2096 +1,1361 @@
-<!DOCTYPE html>
-<html lang="es">
+const express = require('express');
+const mongoose = require('mongoose');
+const crypto = require('crypto');
+const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const jwt = require('jsonwebtoken');
+const path = require('path');
+
+const app = express();
+app.set('trust proxy', 1);
+
+const JWT_SECRET = process.env.JWT_SECRET || 'cambia-este-secret-por-uno-largo';
+const MONGO_URI = process.env.MONGO_URI || '';
+const VOLTILS_URL = process.env.VOLTILS_URL || 'https://voltils.nxtdev.xyz/v1/obfuscate';
+const VOLTILS_KEY = process.env.VOLTILS_KEY || 'voltils_1141173377189556324_c3102f5c336c3445442988c4366fe2eb10975a15';
+const VOLTILS_PRESET = process.env.VOLTILS_PRESET || 'normal';
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/auto';
+
+const PORT = process.env.PORT || 10000;
+
+app.use(helmet({
+  contentSecurityPolicy: false,
+  frameguard: { action: 'deny' },
+  referrerPolicy: { policy: 'no-referrer' },
+  hidePoweredBy: true
+}));
+app.disable('x-powered-by');
+app.use(cors({ origin: true, credentials: true }));
+app.use(express.json({ limit: '2mb' }));
+
+function clientIp(req) {
+  const xf = req.headers['x-forwarded-for'];
+  if (xf) return String(xf).split(',')[0].trim();
+  return (req.socket?.remoteAddress || req.ip || '?').replace(/^::ffff:/, '');
+}
+
+// --- Rate limits por capa ---
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => clientIp(req),
+  message: { error: 'Demasiadas peticiones. Espera un poco.' }
+});
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  keyGenerator: (req) => clientIp(req),
+  message: { error: 'Demasiados intentos de login/registro' }
+});
+const rawLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20, // max 20 hits / minuto / IP al raw
+  keyGenerator: (req) => clientIp(req),
+  message: { error: 'Rate limit raw: máx 20/min por IP' }
+});
+const rawBurstLimiter = rateLimit({
+  windowMs: 10 * 1000,
+  max: 8, // anti-burst 8 / 10s
+  keyGenerator: (req) => clientIp(req),
+  message: { error: 'Burst bloqueado' }
+});
+const verifyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 40,
+  keyGenerator: (req) => clientIp(req),
+  message: { success: false, error: 'Rate limit verify' }
+});
+
+app.use('/api/', apiLimiter);
+app.use('/api/auth/', authLimiter);
+
+// Contadores en memoria para auto-ban
+const abuseHits = new Map(); // ip -> { n, t }
+const AUTO_BAN_THRESHOLD = 80; // hits raw en 2 min
+const AUTO_BAN_WINDOW = 2 * 60 * 1000;
+
+function trackAbuse(ip) {
+  const now = Date.now();
+  let e = abuseHits.get(ip);
+  if (!e || now - e.t > AUTO_BAN_WINDOW) e = { n: 0, t: now };
+  e.n += 1;
+  e.t = e.t || now;
+  abuseHits.set(ip, e);
+  return e.n;
+}
+
+// Limpieza periódica
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, e] of abuseHits) {
+    if (now - e.t > AUTO_BAN_WINDOW * 2) abuseHits.delete(ip);
+  }
+}, 60000).unref?.();
+
+app.use(async (req, res, next) => {
+  try {
+    if (!req.path.startsWith('/api') && !req.originalUrl.startsWith('/api')) return next();
+    const ip = clientIp(req);
+    if (!ip || ip === '?') return next();
+    if (mongoose.connection.readyState === 1) {
+      const Model = mongoose.models.QrexBlacklistIP;
+      if (Model) {
+        const banned = await Model.findOne({ ip }).lean();
+        if (banned) return res.status(403).json({ error: 'IP bloqueada', reason: banned.reason || 'abuse' });
+      }
+    }
+    next();
+  } catch { next(); }
+});
+
+
+let mongoReady = false;
+
+async function connectMongo() {
+  if (!MONGO_URI) {
+    console.error('FATAL: MONGO_URI no esta configurado en Environment Variables');
+    return;
+  }
+  try {
+    await mongoose.connect(MONGO_URI, {
+      serverSelectionTimeoutMS: 10000
+    });
+    mongoReady = true;
+    console.log('Mongo OK');
+  } catch (err) {
+    mongoReady = false;
+    console.error('Mongo error:', err.message);
+  }
+}
+connectMongo();
+
+mongoose.connection.on('connected', () => { mongoReady = true; console.log('Mongo connected'); });
+mongoose.connection.on('disconnected', () => { mongoReady = false; console.log('Mongo disconnected'); });
+mongoose.connection.on('error', (e) => { mongoReady = false; console.error('Mongo conn error:', e.message); });
+
+const User = mongoose.models.QrexUser || mongoose.model('QrexUser', new mongoose.Schema({
+  username: { type: String, unique: true, required: true, lowercase: true, trim: true },
+  passwordHash: { type: String, required: true },
+  role: { type: String, default: 'user' }, // user | admin
+  premium: { type: Boolean, default: false },
+  premiumUntil: { type: Date, default: null },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+function isPremiumUser(u) {
+  if (!u) return false;
+  if (u.role === 'admin') return true;
+  if (!u.premium) return false;
+  if (u.premiumUntil && new Date(u.premiumUntil) < new Date()) return false;
+  return true;
+}
+
+async function ensureOwnerAdmin() {
+  try {
+    const u = await User.findOne({ username: 'owner' });
+    if (u && u.role !== 'admin') {
+      u.role = 'admin';
+      u.premium = true;
+      await u.save();
+      console.log('OWNER promoted to admin');
+    }
+  } catch (e) {}
+}
+mongoose.connection.on('connected', () => { ensureOwnerAdmin(); });
+
+const Script = mongoose.models.QrexScript || mongoose.model('QrexScript', new mongoose.Schema({
+  id: { type: String, default: () => crypto.randomBytes(12).toString('hex') },
+  ownerId: String,
+  name: String,
+  description: { type: String, default: '' },
+  source: String,
+  obfuscated: String,
+  executions: { type: Number, default: 0 },
+  keyMode: { type: String, default: 'keyless' }, // keyless | key
+  providerId: { type: String, default: '' },
+  providerName: { type: String, default: '' },
+  doObfuscate: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const ScriptVersion = mongoose.models.QrexScriptVersion || mongoose.model('QrexScriptVersion', new mongoose.Schema({
+  scriptId: String,
+  ownerId: String,
+  name: String,
+  source: String,
+  obfuscated: String,
+  note: { type: String, default: '' },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const Webhook = mongoose.models.QrexWebhook || mongoose.model('QrexWebhook', new mongoose.Schema({
+  ownerId: String,
+  url: String,
+  events: { type: [String], default: ['key_verify', 'script_exec'] },
+  enabled: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const Asset = mongoose.models.QrexAsset || mongoose.model('QrexAsset', new mongoose.Schema({
+  ownerId: String,
+  name: String,
+  type: { type: String, default: 'text' }, // text | url | image
+  content: String,
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const BlacklistIP = mongoose.models.QrexBlacklistIP || mongoose.model('QrexBlacklistIP', new mongoose.Schema({
+  ip: { type: String, unique: true },
+  reason: { type: String, default: '' },
+  createdBy: String,
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const FREE_SCRIPT_LIMIT = 15;
+
+async function fireWebhooks(ownerId, event, payload) {
+  try {
+    const hooks = await Webhook.find({ ownerId, enabled: true, events: event });
+    const body = JSON.stringify({
+      content: null,
+      embeds: [{
+        title: event === 'key_verify' ? 'Key verificada' : event === 'script_exec' ? 'Script ejecutado' : event,
+        description: '```json\n' + JSON.stringify(payload, null, 2).slice(0, 1500) + '\n```',
+        color: event === 'key_verify' ? 0x7c3aed : 0x34d399,
+        timestamp: new Date().toISOString()
+      }]
+    });
+    await Promise.all(hooks.map(h =>
+      fetch(h.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }).catch(() => {})
+    ));
+  } catch (e) { console.error('webhook', e.message); }
+}
+
+const Execution = mongoose.models.QrexExecution || mongoose.model('QrexExecution', new mongoose.Schema({
+  scriptId: String,
+  scriptName: String,
+  ownerId: String,
+  ip: String,
+  userAgent: String,
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const HubScript = mongoose.models.QrexHubScript || mongoose.model('QrexHubScript', new mongoose.Schema({
+  name: { type: String, required: true },
+  description: { type: String, default: '' },
+  loadstring: { type: String, required: true },
+  scriptId: String,
+  ownerId: String,
+  ownerUsername: String,
+  executionsAtPublish: { type: Number, default: 0 },
+  views: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const Provider = mongoose.models.QrexProvider || mongoose.model('QrexProvider', new mongoose.Schema({
+  name: { type: String, required: true },
+  ownerId: { type: String, required: true },
+  keyValidityHours: { type: Number, default: 24 },
+  hwidLimit: { type: Number, default: 1 },
+  enabled: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const LicenseKey = mongoose.models.QrexLicenseKey || mongoose.model('QrexLicenseKey', new mongoose.Schema({
+  key: { type: String, unique: true, required: true },
+  providerId: { type: String, required: true },
+  providerName: String,
+  ownerId: { type: String, required: true },
+  hwidLimit: { type: Number, default: 1 },
+  hwids: { type: [String], default: [] },
+  expiresAt: { type: Date, default: null },
+  enabled: { type: Boolean, default: true },
+  note: { type: String, default: '' },
+  uses: { type: Number, default: 0 },
+  lastUsedAt: { type: Date, default: null },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+function genKey() {
+  return crypto.randomUUID ? crypto.randomUUID() : [
+    crypto.randomBytes(4).toString('hex'),
+    crypto.randomBytes(2).toString('hex'),
+    crypto.randomBytes(2).toString('hex'),
+    crypto.randomBytes(2).toString('hex'),
+    crypto.randomBytes(6).toString('hex')
+  ].join('-');
+}
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return salt + ':' + hash;
+}
+
+function verifyPassword(password, stored) {
+  const [salt, hash] = (stored || '').split(':');
+  if (!salt || !hash) return false;
+  try {
+    const test = crypto.scryptSync(password, salt, 64).toString('hex');
+    return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(test, 'hex'));
+  } catch {
+    return false;
+  }
+}
+
+function signToken(user) {
+  return jwt.sign(
+    { sub: user._id.toString(), username: user.username },
+    JWT_SECRET,
+    { expiresIn: '30d' }
+  );
+}
+
+function auth(req, res, next) {
+  const h = req.headers.authorization || '';
+  const token = h.startsWith('Bearer ') ? h.slice(7) : '';
+  if (!token) return res.status(401).json({ error: 'No autorizado' });
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Token invalido' });
+  }
+}
+
+function needMongo(req, res, next) {
+  if (!MONGO_URI) {
+    return res.status(503).json({ error: 'MONGO_URI no configurado en Render Environment' });
+  }
+  if (!mongoReady && mongoose.connection.readyState !== 1) {
+    return res.status(503).json({ error: 'MongoDB no conectado. Revisa MONGO_URI y Network Access en Atlas (0.0.0.0/0)' });
+  }
+  next();
+}
+
+async function obfuscateWithVoltils(code) {
+  const r = await fetch(VOLTILS_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + VOLTILS_KEY
+    },
+    body: JSON.stringify({ code: String(code || ''), preset: VOLTILS_PRESET }),
+    signal: AbortSignal.timeout(60000)
+  });
+  const text = await r.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch {}
+  // Accept several response shapes
+  const out = (data && (data.code || data.result || data.obfuscated || data.output || data.data))
+    || (typeof data === 'string' ? data : null)
+    || (!data && text && !text.trim().startsWith('{') ? text : null);
+  if (!r.ok || !out) {
+    const err = (data && (data.error || data.message)) || ('Voltils HTTP ' + r.status);
+    throw new Error(String(err));
+  }
+  return String(out);
+}
+
+function xorBytes(buf, key) {
+  const out = Buffer.alloc(buf.length);
+  for (let i = 0; i < buf.length; i++) out[i] = buf[i] ^ key[i % key.length];
+  return out;
+}
+
+/** 5 capas: XOR aleatorio + Base64 repetido (Lua decoder al final) */
+const ENV_GATE_LUA = "--[[ Qrex Env Logger + anti-steal ]]\nlocal function __qrexEnvGate()\n  local _ok = true\n  local function fail() _ok = false end\n\n  -- 1) getgenv / debug\n  do\n    local a = true\n    local b = getgenv\n    local c = debug\n    local d = c and c.getinfo\n    local e = c and (c.getupvalue or c.getupvalues)\n    local f = getmetatable\n    local g = iscclosure\n    if not b or not d then\n      a = false\n    else\n      local h = b()\n      if f(h) and (f(h).__index or f(h).__newindex or f(h).__metatable) then a = false end\n      local k = d(b)\n      if not k or k.what ~= \"C\" or k.source ~= \"=[C]\" then a = false end\n      if g and not g(b) then a = false end\n      if e then\n        local l, m = pcall(e, b, 1)\n        if l and m ~= nil then a = false end\n      end\n      local x = \"_t\"\n      h[x] = 1\n      if rawget(h, x) ~= 1 then a = false end\n      h[x] = nil\n    end\n    if not a then fail() end\n  end\n\n  -- 2) TerrainRegion\n  do\n    local success = pcall(function()\n      local c = Instance.new(\"TerrainRegion\")\n      assert(typeof(c) == \"Instance\")\n      assert(c.ClassName == \"TerrainRegion\")\n      assert(c:IsA(\"TerrainRegion\"))\n      assert(c:IsA(\"Instance\"))\n      local workspaceTerrain = workspace:FindFirstChildOfClass(\"Terrain\")\n      if workspaceTerrain then\n        local ok, region = pcall(function()\n          return workspaceTerrain:CopyRegion(Region3.new(Vector3.new(0,0,0), Vector3.new(4,4,4)))\n        end)\n        if ok and region then\n          assert(typeof(region) == \"TerrainRegion\")\n          assert(region.ClassName == \"TerrainRegion\")\n          local size = region.Size\n          assert(typeof(size) == \"Vector3int16\")\n        end\n      end\n      local part = Instance.new(\"Part\")\n      local _ = part.Position\n      part:Destroy()\n    end)\n    if not success then fail() end\n  end\n\n  -- 3) DataModel check (NO infinite loop - that bricks legit users)\n  do\n    if game.ClassName ~= \"DataModel\" then fail() end\n  end\n\n  -- 4) OverlapParams\n  do\n    local w = workspace\n    local a = Instance.new(\"Part\")\n    local b = Instance.new(\"Part\")\n    a.Anchored = true\n    b.Anchored = true\n    a.CFrame = CFrame.new(0,0,0)\n    b.CFrame = CFrame.new(0,0,0)\n    a.Parent = w\n    b.Parent = w\n    local q = OverlapParams.new()\n    q.IncludeInstances = {a, b}\n    local x = w:GetPartBoundsInBox(CFrame.new(), Vector3.new(4,4,4), q)\n    q.ExcludeInstances = {b}\n    local y = w:GetPartBoundsInBox(CFrame.new(), Vector3.new(4,4,4), q)\n    q.IncludeInstances = {}\n    local z = w:GetPartBoundsInBox(CFrame.new(), Vector3.new(4,4,4), q)\n    local function has(t, inst)\n      for _, v in t do if v == inst then return true end end\n      return false\n    end\n    local ok = has(x,a) and has(x,b) and has(y,a) and not has(y,b) and #z == 0\n    a:Destroy(); b:Destroy()\n    if not ok then fail() end\n  end\n\n  -- 5) TweenService\n  do\n    local ok = pcall(function()\n      local ts = game:GetService(\"TweenService\")\n      local obj = Instance.new(\"NumberValue\")\n      obj.Value = 0\n      obj.Parent = workspace\n      local tween = ts:Create(obj, TweenInfo.new(1, Enum.EasingStyle.Linear, Enum.EasingDirection.In), {Value = 1})\n      tween:Play()\n      task.wait(0.5)\n      local mid = obj.Value\n      if mid <= 0 or mid >= 1 or mid < 0.3 or mid > 0.7 then error(\"dtc\") end\n      tween.Completed:Wait()\n      if obj.Value ~= 1 then error(\"dtc\") end\n      obj:Destroy()\n    end)\n    if not ok then fail() end\n  end\n\n  if not _ok then\n    error(\"dtc bro\")\n  end\nend\n__qrexEnvGate()\n";
+
+function wrapWithEnvLogger(source) {
+  return ENV_GATE_LUA + "\n" + String(source || "");
+}
+
+async function resolveObfuscated(source, mode) {
+  // Ofuscación obligatoria vía API interna. Branding QyrexObf. Sin env logger.
+  const src = String(source || '');
+  try {
+    let code = await obfuscateWithVoltils(src);
+    code = String(code || '');
+    if (!code.trim().startsWith('-- Protect by QyrexObf')) {
+      code = '-- Protect by QyrexObf\n' + code;
+    }
+    return { code, doObfuscate: true, obfMode: 'qrex' };
+  } catch (e) {
+    console.error('Obfuscator fail:', e.message);
+    // Re-lanzar para que el create muestre error (no guardar sin ofuscar)
+    throw new Error('Ofuscación falló: ' + (e.message || 'error'));
+  }
+}
+
+
+function localObfuscate(code) {
+  const raw = String(code || '');
+  if (!raw) return '-- empty';
+  if (raw.length > 1500000) throw new Error('Script demasiado grande para ofuscar');
+  const src = Buffer.from(raw, 'utf8');
+  let data = src;
+  const keys = [];
+  for (let layer = 0; layer < 5; layer++) {
+    const key = crypto.randomBytes(16);
+    keys.push(key);
+    data = xorBytes(data, key);
+    data = Buffer.from(data.toString('base64'), 'utf8');
+  }
+  const keyLits = keys.map(k => '{' + Array.from(k).join(',') + '}').join(',');
+  const payload = data.toString('utf8').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const lines = [
+    '-- Qrex local protect (5x XOR+B64)',
+    'local _k={' + keyLits + '}',
+    'local _d="' + payload + '"',
+    'local function _xb(s,key)',
+    '  local t={}',
+    '  for i=1,#s do t[i]=string.char(bit32.bxor(string.byte(s,i), key[((i-1)%#key)+1])) end',
+    '  return table.concat(t)',
+    'end',
+    'local function _b64(data)',
+    "  local b='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'",
+    "  data=string.gsub(data,'[^'..b..'=]','')",
+    "  return (data:gsub('.',function(x)",
+    "    if x=='=' then return '' end",
+    "    local r,f='',(b:find(x)-1)",
+    "    for i=6,1,-1 do r=r..(f%2^i - f%2^(i-1) > 0 and '1' or '0') end",
+    '    return r',
+    "  end):gsub('%d%d%d?%d?%d?%d?%d?%d?',function(x)",
+    '    if #x~=8 then return \'\' end',
+    '    local c=0',
+    "    for i=1,8 do c=c+(x:sub(i,i)=='1' and 2^(8-i) or 0) end",
+    '    return string.char(c)',
+    '  end))',
+    'end',
+    'for i=5,1,-1 do',
+    '  _d=_b64(_d)',
+    '  _d=_xb(_d,_k[i])',
+    'end',
+    'assert((loadstring or load)(_d))()'
+  ];
+  return lines.join('\n');
+}
+
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    service: 'QrexApi',
+    mongo: mongoReady || mongoose.connection.readyState === 1,
+    mongoState: mongoose.connection.readyState // 0=off 1=on 2=connecting 3=disconnecting
+  });
+});
+
+app.post('/api/auth/register', needMongo, async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    const user = (username || '').trim().toLowerCase();
+    const pass = password || '';
+
+    if (!user || user.length < 3) {
+      return res.status(400).json({ error: 'Usuario minimo 3 caracteres' });
+    }
+    if (!/^[a-z0-9_]+$/.test(user)) {
+      return res.status(400).json({ error: 'Solo letras, numeros y _' });
+    }
+    if (pass.length < 4) {
+      return res.status(400).json({ error: 'Contraseña minimo 4 caracteres' });
+    }
+
+    const exists = await User.findOne({ username: user });
+    if (exists) {
+      return res.status(400).json({ error: 'Ese usuario ya existe' });
+    }
+
+    const isOwnerName = user === 'owner';
+    const doc = await User.create({
+      username: user,
+      passwordHash: hashPassword(pass),
+      role: isOwnerName ? 'admin' : 'user',
+      premium: isOwnerName ? true : false
+    });
+
+    const token = signToken(doc);
+    res.json({
+      token,
+      user: {
+        id: doc._id,
+        username: doc.username,
+        role: doc.role,
+        premium: isPremiumUser(doc)
+      }
+    });
+  } catch (e) {
+    console.error('register', e);
+    if (e.code === 11000) {
+      return res.status(400).json({ error: 'Ese usuario ya existe' });
+    }
+    res.status(500).json({ error: 'Error al registrar: ' + (e.message || 'desconocido') });
+  }
+});
+
+app.post('/api/auth/login', needMongo, async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    const user = (username || '').trim().toLowerCase();
+    const pass = password || '';
+
+    if (!user || !pass) {
+      return res.status(400).json({ error: 'Falta usuario o contraseña' });
+    }
+
+    const doc = await User.findOne({ username: user });
+    if (!doc || !verifyPassword(pass, doc.passwordHash)) {
+      return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
+    }
+
+    if (doc.username === 'owner' && doc.role !== 'admin') {
+      doc.role = 'admin';
+      doc.premium = true;
+      await doc.save();
+    }
+
+    const token = signToken(doc);
+    res.json({
+      token,
+      user: {
+        id: doc._id,
+        username: doc.username,
+        role: doc.role || 'user',
+        premium: isPremiumUser(doc)
+      }
+    });
+  } catch (e) {
+    console.error('login', e);
+    res.status(500).json({ error: 'Error al iniciar sesion: ' + (e.message || 'desconocido') });
+  }
+});
+
+app.get('/api/me', auth, needMongo, async (req, res) => {
+  const user = await User.findById(req.user.sub);
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (user.username === 'owner' && user.role !== 'admin') {
+    user.role = 'admin';
+    user.premium = true;
+    await user.save();
+  }
+  res.json({
+    id: user._id,
+    username: user.username,
+    role: user.role || 'user',
+    premium: isPremiumUser(user)
+  });
+});
+
+function requireAdmin(req, res, next) {
+  User.findById(req.user.sub).then(u => {
+    if (!u || u.role !== 'admin') return res.status(403).json({ error: 'Solo admin' });
+    req.adminUser = u;
+    next();
+  }).catch(() => res.status(403).json({ error: 'Solo admin' }));
+}
+
+app.get('/api/scripts', auth, needMongo, async (req, res) => {
+  const list = await Script.find({ ownerId: req.user.sub })
+    .sort({ createdAt: -1 })
+    .select('-source -obfuscated');
+  res.json(list);
+});
+
+app.get('/api/scripts/:id', auth, needMongo, async (req, res) => {
+  const s = await Script.findOne({ id: req.params.id, ownerId: req.user.sub });
+  if (!s) return res.status(404).json({ error: 'No encontrado' });
+  res.json(s);
+});
+
+app.post('/api/scripts', auth, needMongo, async (req, res) => {
+  try {
+    const { name, description, source, keyMode, providerId } = req.body || {};
+    if (!name || !source) return res.status(400).json({ error: 'name y source requeridos' });
+
+    const me = await User.findById(req.user.sub);
+    const prem = isPremiumUser(me);
+    const count = await Script.countDocuments({ ownerId: req.user.sub });
+    if (!prem && count >= FREE_SCRIPT_LIMIT) {
+      return res.status(403).json({ error: 'Límite de ' + FREE_SCRIPT_LIMIT + ' scripts. Activa VIP/Premium para ilimitados.' });
+    }
+
+    let providerName = '';
+    let pid = '';
+    const mode = keyMode === 'key' ? 'key' : 'keyless';
+    if (mode === 'key' && providerId) {
+      const prov = await Provider.findOne({ _id: providerId, ownerId: req.user.sub });
+      if (!prov) return res.status(400).json({ error: 'Provider inválido' });
+      providerName = prov.name;
+      pid = String(prov._id);
+    }
+
+    let obfMode = (req.body?.obfMode || '').toString();
+    if (!obfMode) {
+      const wantObf = req.body?.doObfuscate !== false && req.body?.doObfuscate !== 'false';
+      obfMode = wantObf ? 'qrex' : 'none';
+    }
+    if (!['none', 'qrex', 'local'].includes(obfMode)) obfMode = 'qrex';
+    const resolved = await resolveObfuscated(source, obfMode);
+    const doc = await Script.create({
+      ownerId: req.user.sub,
+      name,
+      description: description || '',
+      source,
+      obfuscated: resolved.code,
+      doObfuscate: resolved.doObfuscate,
+      obfMode: resolved.obfMode,
+      keyMode: mode,
+      providerId: pid,
+      providerName
+    });
+
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+
+    res.json({
+      id: doc.id,
+      name: doc.name,
+      loadstring: `loadstring(game:HttpGet("${proto}://${host}/api/raw/${doc.id}"))()`
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || 'Error al crear' });
+  }
+});
+
+app.put('/api/scripts/:id', auth, needMongo, async (req, res) => {
+  try {
+    const { name, description, source, keyMode, providerId } = req.body || {};
+    const s = await Script.findOne({ id: req.params.id, ownerId: req.user.sub });
+    if (!s) return res.status(404).json({ error: 'No encontrado' });
+
+    // version snapshot before change
+    if (source || name || description !== undefined) {
+      await ScriptVersion.create({
+        scriptId: s.id,
+        ownerId: req.user.sub,
+        name: s.name,
+        source: s.source,
+        obfuscated: s.obfuscated,
+        note: 'Auto-save before edit'
+      });
+      const vers = await ScriptVersion.find({ scriptId: s.id }).sort({ createdAt: -1 });
+      if (vers.length > 15) {
+        const drop = vers.slice(15);
+        await ScriptVersion.deleteMany({ _id: { $in: drop.map(v => v._id) } });
+      }
+    }
+
+    if (name) s.name = name;
+    if (description !== undefined) s.description = description;
+    if (keyMode === 'key' || keyMode === 'keyless') {
+      s.keyMode = keyMode;
+      if (keyMode === 'key' && providerId) {
+        const prov = await Provider.findOne({ _id: providerId, ownerId: req.user.sub });
+        if (prov) { s.providerId = String(prov._id); s.providerName = prov.name; }
+      } else if (keyMode === 'keyless') {
+        s.providerId = ''; s.providerName = '';
+      }
+    }
+    if (req.body?.obfMode && ['none','qrex','local'].includes(req.body.obfMode)) {
+      s.obfMode = req.body.obfMode;
+      s.doObfuscate = s.obfMode !== 'none';
+    } else if (req.body?.doObfuscate !== undefined) {
+      s.doObfuscate = req.body.doObfuscate !== false && req.body.doObfuscate !== 'false';
+      s.obfMode = s.doObfuscate ? (s.obfMode === 'local' ? 'local' : 'qrex') : 'none';
+    }
+    if (source) {
+      s.source = source;
+      const resolved = await resolveObfuscated(source, 'qrex');
+      s.obfuscated = resolved.code;
+      s.doObfuscate = resolved.doObfuscate;
+      s.obfMode = resolved.obfMode;
+    } else if ((req.body?.obfMode || req.body?.doObfuscate !== undefined) && s.source) {
+      const resolved = await resolveObfuscated(s.source, 'qrex');
+      s.obfuscated = resolved.code;
+      s.doObfuscate = resolved.doObfuscate;
+      s.obfMode = resolved.obfMode;
+    }
+    await s.save();
+    res.json({ success: true, id: s.id });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
+
+app.delete('/api/scripts/:id', auth, needMongo, async (req, res) => {
+  await Script.deleteOne({ id: req.params.id, ownerId: req.user.sub });
+  res.json({ success: true });
+});
+
+app.get(['/api/raw/:id', '/api/v1/luascripts/public/:id/download', '/api/v1/luascripts/public/:id'], rawBurstLimiter, rawLimiter, async (req, res) => {
+  const ip = clientIp(req);
+  const hits = trackAbuse(ip);
+  if (hits >= AUTO_BAN_THRESHOLD) {
+    try {
+      if (mongoose.connection.readyState === 1 && mongoose.models.QrexBlacklistIP) {
+        await mongoose.models.QrexBlacklistIP.findOneAndUpdate(
+          { ip },
+          { ip, reason: 'Auto-ban: flood /api/raw (' + hits + ' hits/2min)', createdBy: 'system' },
+          { upsert: true }
+        );
+      }
+    } catch {}
+    return res.status(403).type('text/plain').send('-- banned');
+  }
+
+  const ua = (req.headers['user-agent'] || '').toLowerCase();
+  const accept = (req.headers['accept'] || '').toLowerCase();
+  const isBrowser =
+    accept.includes('text/html') &&
+    /mozilla|chrome|firefox|safari|edg/i.test(ua) &&
+    !/roblox|executor|synapse|fluxus|solara/i.test(ua);
+
+  if (isBrowser) {
+    return res.status(403).type('html').send(`<!DOCTYPE html>
+<html lang="en">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>QrexApi</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<title>Access Denied — QrexApi</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  *{box-sizing:border-box}
-  body{font-family:Inter,system-ui,sans-serif;background:var(--bg,#0a0a0f);color:var(--text,#e4e4ed);margin:0}
-  :root{--bg:#0a0a0f;--card:#111118;--accent:#7c3aed;--accent2:#a78bfa;--border:#1e1e2a}
-  body.theme-neon{--bg:#050510;--card:#0a0a18;--accent:#00ff9d;--accent2:#00d4ff;--border:#1a2a22}
-  body.theme-cyber{--bg:#0a0014;--card:#12001f;--accent:#ff00aa;--accent2:#00f0ff;--border:#2a1040}
-  body.theme-blood{--bg:#0f0505;--card:#1a0a0a;--accent:#dc2626;--accent2:#f87171;--border:#2a1515}
-  .btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent))!important}
-  .card{background:var(--card)!important;border-color:var(--border)!important}
-  @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
-  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-  @keyframes scaleIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
-  @keyframes slideRight{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:none}}
-  @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-  @keyframes glowPulse{0%,100%{box-shadow:0 0 0 0 rgba(124,58,237,.0)}50%{box-shadow:0 0 24px 0 rgba(124,58,237,.15)}}
-  .page{animation:fadeUp .4s cubic-bezier(.22,1,.36,1) both}
-  .card{transition:border-color .2s,box-shadow .25s,transform .25s}
-  .card:hover{border-color:#2a2a3d}
-  .nav-item{transition:all .2s cubic-bezier(.22,1,.36,1)}
-  .btn-primary{transition:opacity .2s,transform .2s,box-shadow .2s}
-  .btn-primary:hover{opacity:.92;transform:translateY(-1px);box-shadow:0 8px 24px rgba(124,58,237,.35)}
-  .btn-ghost{transition:all .2s}
-  .stat-val{animation:fadeUp .5s .1s both}
-  #loginView .card{animation:scaleIn .5s cubic-bezier(.22,1,.36,1) both}
-  .sidebar{animation:slideRight .4s cubic-bezier(.22,1,.36,1) both}
-  #scriptsList .card{animation:fadeUp .35s both}
-  #scriptsList .card:nth-child(1){animation-delay:.05s}
-  #scriptsList .card:nth-child(2){animation-delay:.1s}
-  #scriptsList .card:nth-child(3){animation-delay:.15s}
-  #scriptsList .card:nth-child(4){animation-delay:.2s}
-  #scriptsList .card:nth-child(5){animation-delay:.25s}
-  input,textarea,select{transition:border-color .2s,box-shadow .2s}
-  input:focus,textarea:focus,select:focus{box-shadow:0 0 0 3px rgba(124,58,237,.15)}
-  .user-pill{transition:border-color .2s}
-  .user-pill:hover{border-color:#2a2a3d}
-  .badge{transition:transform .2s}
-  .editor-wrap{transition:border-color .2s}
-  .editor-wrap:focus-within{border-color:#7c3aed}
-
-  .sidebar{background:#0d0d14;border-right:1px solid #1a1a24;width:260px}
-  .nav-section{font-size:10px;letter-spacing:.08em;color:#5a5a6e;font-weight:600;padding:16px 16px 6px;text-transform:uppercase}
-  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 14px;margin:1px 8px;border-radius:8px;color:#8b8b9e;font-size:13.5px;font-weight:500;cursor:pointer;transition:all .15s;border:none;background:transparent;width:calc(100% - 16px);text-align:left}
-  .nav-item:hover{background:#16161f;color:#c4b5fd}
-  .nav-item.active{background:#1a1428;color:#a78bfa}
-  .nav-item svg{width:18px;height:18px;flex-shrink:0;opacity:.7}
-  .nav-item.active svg{opacity:1}
-  .card{background:#111118;border:1px solid #1e1e2a;border-radius:14px}
-  input,textarea,select{background:#0c0c12;border:1px solid #252533;color:#e4e4ed;border-radius:10px;padding:11px 14px;font-size:14px;width:100%;outline:none;transition:border .15s}
-  input:focus,textarea:focus,select:focus{border-color:#7c3aed}
-  .btn-primary{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:10px;padding:11px 20px;font-weight:600;font-size:14px;cursor:pointer;transition:opacity .15s}
-  .btn-primary:hover{opacity:.9}
-  .btn-primary:disabled{opacity:.5;cursor:not-allowed}
-  .btn-ghost{background:transparent;border:1px solid #2a2a3a;color:#a0a0b0;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a0f;font-family:Inter,system-ui,sans-serif;color:#e4e4ed;overflow:hidden}
+  body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 50% 30%,rgba(124,58,237,.12),transparent 60%);pointer-events:none}
+  .card{position:relative;background:#111118;border:1px solid #1e1e2a;border-radius:20px;padding:40px 44px;max-width:520px;width:90%;box-shadow:0 25px 80px rgba(0,0,0,.5);animation:rise .6s cubic-bezier(.22,1,.36,1) both}
+  @keyframes rise{from{opacity:0;transform:translateY(24px) scale(.97)}to{opacity:1;transform:none}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+  .badge{display:inline-flex;align-items:center;gap:6px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#f87171;font-size:11px;font-weight:600;letter-spacing:.04em;padding:5px 12px;border-radius:999px;margin-bottom:20px;animation:pulse 2s ease infinite}
+  .badge::before{content:'';width:6px;height:6px;border-radius:50%;background:#f87171}
+  h1{font-size:22px;font-weight:700;line-height:1.35;margin-bottom:12px}
+  p{font-size:14px;color:#8b8b9e;line-height:1.6;margin-bottom:8px}
+  .actions{display:flex;gap:10px;margin-top:28px;flex-wrap:wrap}
+  a{text-decoration:none;font-size:13px;font-weight:600;padding:11px 18px;border-radius:10px;transition:all .2s}
+  .btn-main{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff}
+  .btn-main:hover{opacity:.9;transform:translateY(-1px)}
+  .btn-ghost{background:transparent;border:1px solid #2a2a3a;color:#a0a0b0}
   .btn-ghost:hover{border-color:#7c3aed;color:#c4b5fd}
-  .stat-val{font-size:32px;font-weight:700;line-height:1.2}
-  .badge{background:#1a1428;color:#a78bfa;font-size:11px;padding:3px 8px;border-radius:6px;font-weight:500}
-  .badge-green{background:#0d1f14;color:#34d399;border:1px solid #1a3a28}
-  .user-pill{display:flex;align-items:center;gap:10px;padding:12px 14px;margin:8px;border-radius:10px;background:#111118;border:1px solid #1e1e2a}
-  .avatar{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#7c3aed,#4c1d95);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff}
-  .tab-bar{display:flex;gap:0;border:1px solid #252533;border-radius:10px;overflow:hidden;background:#0c0c12}
-  .tab-bar button{flex:1;padding:10px;font-size:13px;font-weight:600;border:none;background:transparent;color:#6b6b80;cursor:pointer}
-  .tab-bar button.active{background:#1a1428;color:#a78bfa}
-  .hint-green{background:#0d1f14;border:1px solid #1a3a28;color:#34d399;border-radius:10px;padding:10px 14px;font-size:12px}
-  .editor-wrap{border:1px solid #252533;border-radius:12px;overflow:hidden;background:#0c0c12;display:flex;flex-direction:column}
-  .editor-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #1e1e2a;flex-wrap:wrap;gap:8px}
-  .editor-body{display:flex;flex:1;min-height:320px;max-height:520px;overflow:hidden;position:relative}
-  .line-nums{color:#4a4a5a;font-family:ui-monospace,Consolas,monospace;font-size:13px;padding:12px 10px 12px 12px;user-select:none;text-align:right;line-height:1.55;min-width:48px;width:48px;flex-shrink:0;overflow:hidden;background:#0a0a10;border-right:1px solid #1a1a24;white-space:pre;box-sizing:border-box}
-  #sSource{border:none;border-radius:0;background:#0c0c12;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.55;resize:none;padding:12px 14px;flex:1;min-width:0;overflow:auto;white-space:pre;tab-size:2;color:#e4e4ed}
-  .studio-toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-  .studio-toolbar .btn-ghost{padding:5px 10px;font-size:11px}
-  .ai-panel{border-top:1px solid #1e1e2a;background:#0a0a10;padding:10px 12px;max-height:140px;overflow:auto}
-  .ai-chip{display:inline-block;margin:3px;padding:5px 10px;border-radius:8px;border:1px solid #2a2a3a;background:#12121a;color:#c4b5fd;font-size:11px;cursor:pointer;transition:all .15s}
-  .ai-chip:hover{border-color:#7c3aed;background:#1a1428}
-  .studio-status{font-size:11px;color:#5a5a6e;padding:6px 12px;border-top:1px solid #1a1a24;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
-  label.field{font-size:12px;font-weight:500;color:#8b8b9e;margin-bottom:6px;display:block}
-  label.field .req{color:#f87171}
-  ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#2a2a3a;border-radius:3px}
-  table{width:100%;border-collapse:collapse}
-  th{text-align:left;padding:12px 16px;font-size:12px;color:#5a5a6e;font-weight:600;border-bottom:1px solid #1e1e2a}
-  td{padding:12px 16px;font-size:13px;border-bottom:1px solid #15151e}
-
-  .toast-wrap{position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
-  .toast{pointer-events:auto;background:#16161f;border:1px solid #2a2a3a;color:#e4e4ed;padding:12px 16px;border-radius:12px;font-size:13px;box-shadow:0 12px 40px rgba(0,0,0,.45);animation:fadeUp .3s both;min-width:220px;display:flex;align-items:center;gap:10px}
-  .toast.ok{border-color:rgba(52,211,153,.35)}
-  .toast.err{border-color:rgba(248,113,113,.35)}
-  .toast .t-icon{font-size:16px}
-  .search-box{position:relative;max-width:280px}
-  .search-box input{padding-left:36px}
-  .search-box svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#5a5a6e;width:16px;height:16px;pointer-events:none}
-  .script-actions{display:flex;flex-wrap:wrap;gap:8px}
-  .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;border:1px solid #2a2a3a;background:transparent;color:#a0a0b0;cursor:pointer;transition:all .2s}
-  .icon-btn:hover{border-color:#7c3aed;color:#c4b5fd;background:#1a1428}
-  .icon-btn.danger:hover{border-color:#f87171;color:#f87171;background:#1a1010}
-  .empty-state{text-align:center;padding:48px 24px;color:#5a5a6e}
-  .empty-state svg{margin:0 auto 12px;opacity:.4}
-  .chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:6px;background:#14141e;color:#8b8b9e;border:1px solid #252533}
-
+  .logo{width:36px;height:36px;border-radius:10px;margin-bottom:20px;object-fit:cover}
 </style>
 </head>
 <body>
-
-<!-- LOGIN -->
-<div class="toast-wrap" id="toasts"></div>
-<div id="loginView" class="min-h-screen flex items-center justify-center p-6">
-  <div class="card p-10 w-full max-w-md">
-    <div class="flex items-center justify-center gap-3 mb-2">
-      <img src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="Qrex" class="w-10 h-10 rounded-xl object-cover"/>
-      <span class="text-2xl font-bold tracking-tight">QrexApi</span>
-    </div>
-    <p class="text-center text-sm mb-8" style="color:#6b6b80">Scripts protegidos · Keys · Dashboard</p>
-    <div class="flex gap-2 mb-6 p-1 rounded-xl" style="background:#0c0c12">
-      <button id="tabLogin" onclick="setTab('login')" class="flex-1 py-2.5 rounded-lg text-sm font-semibold" style="background:#7c3aed;color:#fff">Entrar</button>
-      <button id="tabReg" onclick="setTab('register')" class="flex-1 py-2.5 rounded-lg text-sm font-semibold" style="background:transparent;color:#6b6b80">Registrarse</button>
-    </div>
-    <div class="space-y-3">
-      <input id="authUser" type="text" placeholder="Usuario" autocomplete="username"/>
-      <input id="authPass" type="password" placeholder="Contraseña" autocomplete="current-password"/>
-      <button id="authBtn" onclick="doAuth()" class="btn-primary w-full mt-2">Entrar</button>
-            <p id="loginErr" class="text-red-400 text-sm text-center hidden mt-2"></p>
+  <div class="card">
+    <img class="logo" src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="Qrex"/>
+    <div class="badge">ACCESS DENIED</div>
+    <h1>This lua script is protected by QrexApi</h1>
+    <p>You don't have permission to access these files.</p>
+    <p>This script has been protected against unauthorized access, reverse engineering, and tampering.</p>
+    <div class="actions">
+      <a class="btn-main" href="/">Return Home</a>
+      <a class="btn-ghost" href="/">Contact QrexApi</a>
     </div>
   </div>
-</div>
-
-<!-- APP -->
-<div id="appView" style="display:none;min-height:100vh">
-  <div class="flex" style="min-height:100vh">
-    <aside class="sidebar flex flex-col fixed h-full z-20">
-      <div class="flex items-center gap-3 px-5 py-5">
-        <img src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="Qrex" class="w-9 h-9 rounded-xl object-cover"/>
-        <span class="font-bold text-lg tracking-tight">QrexApi</span>
-      </div>
-      <nav class="flex-1 overflow-y-auto pb-4">
-        <div class="nav-section">General</div>
-        <button class="nav-item active" data-page="overview" onclick="go('overview')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1h-2z"/></svg>
-          Overview
-        </button>
-        <div class="nav-section">Scripts</div>
-        <button class="nav-item" data-page="scripts" onclick="go('scripts')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-          Lua Scripts
-        </button>
-        <button class="nav-item" data-page="hub" onclick="go('hub')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-          Script Hub
-        </button>
-        <button class="nav-item" data-page="keys" onclick="go('keys')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
-          Key System
-        </button>
-        <button class="nav-item" data-page="webhooks" onclick="go('webhooks')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-          Webhooks
-        </button>
-        <button class="nav-item" data-page="leaderboard" onclick="go('leaderboard')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-          Leaderboard
-        </button>
-        <button class="nav-item" data-page="assets" onclick="go('assets')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
-          My Assets
-        </button>
-        <button class="nav-item" data-page="templates" onclick="go('templates')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"/></svg>
-          Templates
-        </button>
-        <button class="nav-item" data-page="status" onclick="go('status')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-          System Status
-        </button>
-        <button class="nav-item" data-page="playground" onclick="go('playground')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-          API Playground
-        </button>
-        <button class="nav-item" data-page="changelog" onclick="go('changelog')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/></svg>
-          Changelog
-        </button>
-        <button class="nav-item" data-page="create" onclick="if(!editingId)resetCreateForm();go('create')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
-          Create Script
-        </button>
-        <button class="nav-item" data-page="studio" onclick="go('studio')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-          Studio
-        </button>
-        <button class="nav-item" data-page="executions" onclick="go('executions')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-          Analytics
-        </button>
-        <div class="nav-section">Developer</div>
-        <button class="nav-item" data-page="apiinfo" onclick="go('apiinfo')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
-          API Info
-        </button>
-        <div class="nav-section admin-only" style="display:none">Admin</div>
-        <button class="nav-item admin-only" style="display:none" data-page="admin" onclick="go('admin')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-          Admin Panel
-        </button>
-        <div class="nav-section">Account</div>
-        <button class="nav-item" data-page="settings" onclick="go('settings')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-          Settings
-        </button>
-      </nav>
-      <div class="user-pill">
-        <div class="avatar" id="userAvatar">?</div>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-1.5 min-w-0">
-            <span class="text-sm font-medium truncate" id="userLabel">—</span>
-            <span id="sidebarVip" class="hidden text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:#3d3418;color:#fbbf24;border:1px solid #5c4d1f">VIP</span>
-            <span id="sidebarAdmin" class="hidden text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:#1a1428;color:#a78bfa;border:1px solid #3b2a5c">ADMIN</span>
-          </div>
-          <div class="text-xs" style="color:#5a5a6e" id="sidebarRole">Usuario</div>
-        </div>
-        <button onclick="logout()" title="Salir" style="background:none;border:none;color:#5a5a6e;cursor:pointer;padding:4px">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-        </button>
-      </div>
-    </aside>
-
-    <main class="flex-1 ml-[260px] min-h-screen">
-      <div class="flex items-center px-8 py-4 border-b" style="border-color:#1a1a24">
-        <div class="text-sm" style="color:#5a5a6e">Dashboard <span style="color:#3a3a4a">›</span> <span id="breadcrumb" style="color:#a0a0b0">Overview</span></div>
-      </div>
-
-      <div class="p-8">
-        <!-- OVERVIEW -->
-        <section id="page-overview" class="page">
-          <h1 class="text-2xl font-bold mb-6">Overview</h1>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl mb-8">
-            <div class="card p-5">
-              <div class="text-xs font-medium mb-2" style="color:#6b6b80">Scripts</div>
-              <div class="stat-val" id="stScripts">0</div>
-            </div>
-            <div class="card p-5">
-              <div class="text-xs font-medium mb-2" style="color:#6b6b80">Ejecuciones totales</div>
-              <div class="stat-val" style="color:#a78bfa" id="stExec">0</div>
-            </div>
-            <div class="card p-5">
-              <div class="text-xs font-medium mb-2" style="color:#6b6b80">Estado</div>
-              <div class="flex items-center gap-2 mt-3">
-                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-                <span class="text-sm font-medium text-emerald-400">Online</span>
-              </div>
-            </div>
-          </div>
-          <div class="card p-5 max-w-4xl">
-            <div class="text-sm font-semibold mb-4">Ejecuciones (últimos 7 días)</div>
-            <canvas id="chartOverview" height="120"></canvas>
-          </div>
-        </section>
-
-        <!-- SCRIPTS LIST -->
-        <section id="page-scripts" class="page hidden">
-          <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-            <h1 class="text-2xl font-bold">Lua Scripts</h1>
-            <div class="flex items-center gap-3">
-              <div class="search-box">
-                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-                <input id="scriptSearch" placeholder="Buscar script..." oninput="filterScripts()" />
-              </div>
-              <button onclick="resetCreateForm();go('create')" class="btn-primary text-sm py-2.5 px-4">+ Create</button>
-            </div>
-          </div>
-          <div id="scriptsList" class="grid gap-3"></div>
-        </section>
-
-
-        <!-- SCRIPT HUB -->
-        <section id="page-hub" class="page hidden">
-          <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-            <div>
-              <h1 class="text-2xl font-bold">Script Hub</h1>
-              <p class="text-xs mt-1" style="color:#5a5a6e">Scripts públicos de la comunidad · mínimo 500 ejecuciones para publicar</p>
-            </div>
-            <button onclick="document.getElementById('hubPublishCard').classList.toggle('hidden')" class="btn-primary text-sm py-2.5 px-4">+ Publicar</button>
-          </div>
-
-          <div id="hubPublishCard" class="card p-6 max-w-2xl mb-6 hidden">
-            <div class="text-sm font-semibold mb-1">Publicar en el Hub</div>
-            <div class="text-xs mb-4" style="color:#5a5a6e">Scripts con <b style="color:#a78bfa">500+ ejecuciones</b> o cuenta <b style="color:#fbbf24">Premium</b>. Todos verán el loadstring.</div>
-            <div class="space-y-4">
-              <div>
-                <label class="field">Tu script (500+ runs) <span class="req">*</span></label>
-                <select id="hubScriptSelect"></select>
-              </div>
-              <div>
-                <label class="field">Nombre público <span class="req">*</span></label>
-                <input id="hubName" placeholder="Nombre que verán todos"/>
-              </div>
-              <div>
-                <label class="field">Descripción</label>
-                <input id="hubDesc" placeholder="Opcional"/>
-              </div>
-              <div class="flex gap-3">
-                <button onclick="publishHub()" class="btn-primary" id="hubPublishBtn">Publicar</button>
-                <button onclick="document.getElementById('hubPublishCard').classList.add('hidden')" class="btn-ghost">Cancelar</button>
-              </div>
-              <p id="hubErr" class="text-sm text-red-400 hidden"></p>
-            </div>
-          </div>
-
-          <div class="search-box mb-4" style="max-width:320px">
-            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-            <input id="hubSearch" placeholder="Buscar en el hub..." oninput="filterHub()"/>
-          </div>
-          <div id="hubList" class="grid gap-3"></div>
-        </section>
-
-        <!-- KEY SYSTEM -->
-        <section id="page-keys" class="page hidden">
-          <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-            <div>
-              <h1 class="text-2xl font-bold">Key System</h1>
-              <p class="text-xs mt-1" style="color:#5a5a6e">Providers · Keys · HWID · Verificación Roblox</p>
-            </div>
-            <div class="flex gap-2">
-              <button onclick="document.getElementById('provCard').classList.toggle('hidden')" class="btn-ghost text-sm">+ Provider</button>
-              <button onclick="document.getElementById('keyGenCard').classList.toggle('hidden')" class="btn-primary text-sm py-2.5 px-4">+ Generate Keys</button>
-            </div>
-          </div>
-
-          <div id="provCard" class="card p-6 max-w-xl mb-6 hidden">
-            <div class="text-sm font-semibold mb-4">Create Provider</div>
-            <div class="space-y-3">
-              <div><label class="field">Provider name <span class="req">*</span></label><input id="provName" placeholder="MyScript"/></div>
-              <div class="grid grid-cols-2 gap-3">
-                <div><label class="field">Key validity (hours)</label><input id="provHours" type="number" value="24" min="1"/></div>
-                <div><label class="field">HWID limit</label><input id="provHwid" type="number" value="1" min="1" max="10"/></div>
-              </div>
-              <button class="btn-primary" onclick="createProvider()">Create Provider</button>
-            </div>
-          </div>
-
-          <div id="keyGenCard" class="card p-6 max-w-xl mb-6 hidden">
-            <div class="text-sm font-semibold mb-4">Generate Keys</div>
-            <div class="space-y-3">
-              <div><label class="field">Provider <span class="req">*</span></label><select id="keyProvSelect"></select></div>
-              <div class="grid grid-cols-3 gap-3">
-                <div><label class="field">Amount</label><input id="keyAmount" type="number" value="1" min="1" max="50"/></div>
-                <div><label class="field">Hours (0=∞)</label><input id="keyHours" type="number" value="24" min="0"/></div>
-                <div><label class="field">HWID limit</label><input id="keyHwidLim" type="number" value="1" min="1" max="10"/></div>
-              </div>
-              <div><label class="field">Note</label><input id="keyNote" placeholder="opcional"/></div>
-              <button class="btn-primary" onclick="generateKeys()">Generate</button>
-              <textarea id="keyGenOut" readonly class="h-24 font-mono text-xs hidden" style="color:#34d399"></textarea>
-            </div>
-          </div>
-
-          <div class="grid lg:grid-cols-2 gap-4 mb-6">
-            <div class="card p-5">
-              <div class="text-sm font-semibold mb-3">Providers</div>
-              <div id="provList" class="space-y-2 text-sm"></div>
-            </div>
-            <div class="card p-5">
-              <div class="text-sm font-semibold mb-2">Loader Lua (copia en tu script)</div>
-              <p class="text-xs mb-3" style="color:#5a5a6e">Cambia PROVIDER_NAME. Verifica key + HWID contra QrexApi.</p>
-              <pre id="loaderSnippet" class="text-[10px] overflow-x-auto whitespace-pre-wrap break-all p-3 rounded-lg font-mono" style="background:#0c0c12;color:#a0a0b0;max-height:220px"></pre>
-              <button class="btn-ghost text-xs mt-2" onclick="copyLs(document.getElementById('loaderSnippet').textContent)">Copiar loader</button>
-            </div>
-          </div>
-
-          <div class="card overflow-hidden">
-            <div class="px-5 py-3 border-b text-sm font-semibold flex justify-between items-center" style="border-color:#1e1e2a">
-              <span>Keys</span>
-              <button class="btn-ghost text-xs" onclick="loadKeysTable()">Refresh</button>
-            </div>
-            <div class="overflow-x-auto">
-              <table>
-                <thead><tr><th>Key</th><th>Provider</th><th>HWID</th><th>Expires</th><th>Uses</th><th></th></tr></thead>
-                <tbody id="keysTable"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-        <!-- CREATE SCRIPT (estilo UNKIE) -->
-        <section id="page-create" class="page hidden">
-          <div class="card max-w-3xl overflow-hidden">
-            <div class="flex items-center justify-between px-6 py-4 border-b" style="border-color:#1e1e2a">
-              <div class="flex items-center gap-3">
-                <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background:#1a1428">
-                  <svg width="18" height="18" fill="none" stroke="#a78bfa" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-                </div>
-                <div>
-                  <div class="font-semibold" id="createTitle">Create Script</div>
-                  <div class="text-xs" style="color:#5a5a6e" id="createSubtitle">Create or modify Lua script</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="p-6 space-y-5">
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label class="field">Name <span class="req">*</span></label>
-                  <input id="sName" placeholder="My script"/>
-                </div>
-                <div>
-                  <label class="field">Description</label>
-                  <input id="sDesc" placeholder="Optional"/>
-                </div>
-              </div>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label class="field">Access mode</label>
-                  <select id="sKeyMode" onchange="document.getElementById('sProvWrap').style.display=this.value==='key'?'block':'none'">
-                    <option value="keyless">Keyless (sin key)</option>
-                    <option value="key">Con Key System</option>
-                  </select>
-                </div>
-                <div id="sProvWrap" style="display:none">
-                  <label class="field">Provider</label>
-                  <select id="sProvider"></select>
-                </div>
-              </div>
-              <div>
-                <label class="field">Protección del código</label>
-                <input type="hidden" id="sObfMode" value="qrex"/>
-                <div class="text-xs" style="color:#5a5a6e">Protección QyrexObf activada automáticamente.</div></div>
-              <div class="text-xs" style="color:#5a5a6e">Gratis: máx 15 scripts · VIP: ilimitados</div>
-
-              <div class="tab-bar">
-                <button type="button" class="active" id="tabScript">
-                  <span style="color:#34d399">●</span> Script
-                </button>
-                <button type="button" id="tabUi" style="opacity:.5;cursor:default" title="Próximamente">
-                  UI-Source
-                </button>
-              </div>
-
-              <div class="hint-green">
-                This is your script. It gets obfuscated before it reaches users — paste your source here.
-              </div>
-
-              <div class="editor-wrap" id="studioEditor">
-                <div class="editor-header">
-                  <div class="flex items-center gap-2 text-xs">
-                    <span style="color:#8b8b9e">&lt;/&gt; Studio · Lua</span>
-                    <span class="badge badge-green">Protected</span>
-                    <span class="badge" id="studioLang">Lua 5.1</span>
-                  </div>
-                  <div class="studio-toolbar">
-                    <button type="button" class="btn-ghost" onclick="studioInsertTab()" title="Tab">Tab</button>
-                    <button type="button" class="btn-ghost" onclick="studioComment()" title="Comentar">//</button>
-                    <button type="button" class="btn-ghost" onclick="studioFormat()" title="Indentar">Format</button>
-                    <button type="button" class="btn-ghost" onclick="studioDownload()" title="Descargar .lua">Download</button>
-                    <label class="btn-ghost cursor-pointer" style="padding:5px 10px">
-                      Upload
-                      <input type="file" accept=".lua,.txt" class="hidden" onchange="uploadFile(this)"/>
-                    </label>
-                    <button type="button" class="btn-ghost" onclick="studioClear()" title="Limpiar">Clear</button>
-                    <button type="button" class="btn-ghost" onclick="studioToggleAi()">AI Tips</button>
-                  </div>
-                </div>
-                <div class="editor-body">
-                  <div class="line-nums" id="lineNums">1</div>
-                  <textarea id="sSource" placeholder="-- Escribe tu Lua aquí (Studio)
--- Los números de línea están a la izquierda y no tapan el código
-local Players = game:GetService(&quot;Players&quot;)
-" oninput="onStudioInput()" onscroll="syncStudioScroll()" onkeydown="studioKey(event)" spellcheck="false"></textarea>
-                </div>
-                <div class="ai-panel" id="aiPanel">
-                  <div class="text-xs mb-1" style="color:#6b6b80">Sugerencias rápidas (clic para insertar)</div>
-                  <div id="aiChips"></div>
-                </div>
-                <div class="studio-status">
-                  <span id="studioPos">Ln 1, Col 1</span>
-                  <span id="studioStats">0 líneas · 0 chars</span>
-                  <span>UTF-8 · Spaces: 2</span>
-                </div>
-              </div>
-
-              <div id="createOutWrap" class="hidden">
-                <label class="field">Loadstring</label>
-                <textarea id="createOut" readonly class="h-16 font-mono text-xs" style="color:#34d399"></textarea>
-              </div>
-            </div>
-
-            <div class="flex items-center justify-end gap-3 px-6 py-4 border-t" style="border-color:#1e1e2a;background:#0d0d14">
-              <button type="button" onclick="resetCreateForm();go('scripts')" class="btn-ghost px-5 py-2.5">Cancel</button>
-              <input type="hidden" id="editId" value=""/>
-              <button id="createBtn" onclick="createScript()" class="btn-primary px-5 py-2.5 flex items-center gap-2">
-                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-                <span id="createBtnLabel">Create</span>
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <!-- ANALYTICS / EXECUTIONS CON GRÁFICAS -->
-        <section id="page-executions" class="page hidden">
-          <h1 class="text-2xl font-bold mb-6">Analytics</h1>
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-            <div class="card p-5">
-              <div class="text-sm font-semibold mb-1">Ejecuciones por día</div>
-              <div class="text-xs mb-4" style="color:#5a5a6e">Últimos 14 días</div>
-              <canvas id="chartDaily" height="180"></canvas>
-            </div>
-            <div class="card p-5">
-              <div class="text-sm font-semibold mb-1">Por script</div>
-              <div class="text-xs mb-4" style="color:#5a5a6e">Top scripts</div>
-              <canvas id="chartScripts" height="180"></canvas>
-            </div>
-          </div>
-          <div class="card p-5 mb-6">
-            <div class="text-sm font-semibold mb-1">Actividad horaria</div>
-            <div class="text-xs mb-4" style="color:#5a5a6e">Distribución por hora (UTC)</div>
-            <canvas id="chartHourly" height="100"></canvas>
-          </div>
-          <div class="card overflow-hidden">
-            <div class="px-5 py-3 border-b text-sm font-semibold" style="border-color:#1e1e2a">Últimas ejecuciones</div>
-            <table>
-              <thead><tr><th>Fecha</th><th>Script</th><th>Hora</th></tr></thead>
-              <tbody id="execTable"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- API INFO -->
-        <section id="page-apiinfo" class="page hidden">
-          <h1 class="text-2xl font-bold mb-6">API Info</h1>
-          <div class="card p-6 max-w-2xl space-y-4">
-            <div>
-              <div class="text-xs font-medium mb-1" style="color:#6b6b80">Base URL</div>
-              <code class="text-sm" style="color:#a78bfa" id="apiBase"></code>
-            </div>
-            <div>
-              <div class="text-xs font-medium mb-1" style="color:#6b6b80">Health</div>
-              <code class="text-sm" style="color:#8b8b9e">GET /api/health</code>
-            </div>
-            <div>
-              <div class="text-xs font-medium mb-1" style="color:#6b6b80">Raw script</div>
-              <code class="text-sm" style="color:#8b8b9e">GET /api/v1/luascripts/public/:id/download</code>
-            </div>
-            <div class="hint-green">Si abres /api/v1/luascripts/public/:id/download en el navegador verás la página Access Denied. Solo Roblox/executors reciben el script.</div>
-          </div>
-        </section>
-
-
-        <!-- ADMIN -->
-        <section id="page-admin" class="page hidden">
-          <h1 class="text-2xl font-bold mb-2">Admin Panel</h1>
-          <p class="text-xs mb-6" style="color:#5a5a6e">Solo visible para OWNER / admin</p>
-          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="adminStats">
-            <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Users</div><div class="text-2xl font-bold" id="aUsers">—</div></div>
-            <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Scripts</div><div class="text-2xl font-bold" id="aScripts">—</div></div>
-            <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Hub</div><div class="text-2xl font-bold" id="aHub">—</div></div>
-            <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Premium</div><div class="text-2xl font-bold" style="color:#fbbf24" id="aPrem">—</div></div>
-          </div>
-
-          <div class="card p-6 mb-6 max-w-xl">
-            <div class="text-sm font-semibold mb-3">Dar / quitar Premium</div>
-            <div class="flex flex-wrap gap-2">
-              <input id="premUser" placeholder="username" style="max-width:160px"/>
-              <input id="premDays" type="number" placeholder="días (30)" value="30" style="max-width:110px"/>
-              <button class="btn-primary text-sm" onclick="adminSetPremium(true)">Activar</button>
-              <button class="btn-ghost text-sm" style="color:#f87171;border-color:#3a1a1a" onclick="adminSetPremium(false)">Quitar</button>
-            </div>
-          </div>
-
-          <div class="card overflow-hidden mb-6">
-            <div class="px-5 py-3 border-b text-sm font-semibold" style="border-color:#1e1e2a">Usuarios</div>
-            <div class="overflow-x-auto">
-              <table>
-                <thead><tr><th>User</th><th>Role</th><th>Premium</th><th>Desde</th></tr></thead>
-                <tbody id="adminUsers"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card overflow-hidden mb-6">
-            <div class="px-5 py-3 border-b text-sm font-semibold flex justify-between" style="border-color:#1e1e2a">
-              <span>Todos los scripts</span>
-              <button class="btn-ghost text-xs" onclick="loadAdminScripts()">Refresh</button>
-            </div>
-            <div class="overflow-x-auto">
-              <table>
-                <thead><tr><th>Name</th><th>Owner</th><th>Runs</th><th></th></tr></thead>
-                <tbody id="adminScripts"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card p-6 mb-6 max-w-xl">
-            <div class="text-sm font-semibold mb-3">IP Blacklist</div>
-            <div class="flex gap-2 mb-3">
-              <input id="blIp" placeholder="IP" style="max-width:160px"/>
-              <input id="blReason" placeholder="Razón" style="max-width:160px"/>
-              <button class="btn-primary text-sm" onclick="adminAddBlacklist()">Ban IP</button>
-            </div>
-            <div id="adminBlacklist" class="text-xs space-y-1" style="color:#8b8b9e"></div>
-          </div>
-
-          <div class="card overflow-hidden">
-            <div class="px-5 py-3 border-b text-sm font-semibold" style="border-color:#1e1e2a">Hub público</div>
-            <div class="overflow-x-auto">
-              <table>
-                <thead><tr><th>Name</th><th>Author</th><th>Views</th><th></th></tr></thead>
-                <tbody id="adminHub"></tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-
-        <!-- WEBHOOKS -->
-        <section id="page-webhooks" class="page hidden">
-          <h1 class="text-2xl font-bold mb-2">Webhooks</h1>
-          <p class="text-xs mb-6" style="color:#5a5a6e">Alertas a Discord cuando verifican una key o ejecutan un script</p>
-          <div class="card p-6 max-w-xl mb-6 space-y-3">
-            <input id="whUrl" placeholder="https://discord.com/api/webhooks/..."/>
-            <button class="btn-primary" onclick="addWebhook()">Añadir webhook</button>
-            <button class="btn-ghost" onclick="testWebhook()">Probar URL</button>
-          </div>
-          <div id="whList" class="grid gap-3 max-w-xl"></div>
-        </section>
-
-        <!-- LEADERBOARD -->
-        <section id="page-leaderboard" class="page hidden">
-          <h1 class="text-2xl font-bold mb-6">Leaderboard</h1>
-          <div class="card overflow-hidden max-w-2xl">
-            <table>
-              <thead><tr><th>#</th><th>Dev</th><th>Scripts</th><th>Ejecuciones</th></tr></thead>
-              <tbody id="lbTable"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- ASSETS -->
-        <section id="page-assets" class="page hidden">
-          <h1 class="text-2xl font-bold mb-2">My Assets</h1>
-          <p class="text-xs mb-6" style="color:#5a5a6e">Nube privada: texto, URLs, snippets UI (máx 20 free / 100 VIP)</p>
-          <div class="card p-6 max-w-xl mb-6 space-y-3">
-            <input id="assetName" placeholder="Nombre"/>
-            <select id="assetType"><option value="text">Text / Lua</option><option value="url">URL</option><option value="image">Image URL</option></select>
-            <textarea id="assetContent" class="h-28 font-mono text-sm" placeholder="Contenido o URL"></textarea>
-            <button class="btn-primary" onclick="addAsset()">Subir asset</button>
-          </div>
-          <div id="assetList" class="grid gap-3"></div>
-        </section>
-
-        <!-- TEMPLATES -->
-        <section id="page-templates" class="page hidden">
-          <h1 class="text-2xl font-bold mb-6">Templates / Snippets</h1>
-          <div id="tplList" class="grid gap-3 max-w-3xl"></div>
-        </section>
-
-        <!-- STATUS -->
-        <section id="page-status" class="page hidden">
-          <h1 class="text-2xl font-bold mb-6">System Status</h1>
-          <div class="grid sm:grid-cols-3 gap-4 max-w-3xl mb-6">
-            <div class="card p-5"><div class="text-xs mb-1" style="color:#6b6b80">API</div><div id="stApi" class="text-lg font-bold">—</div></div>
-            <div class="card p-5"><div class="text-xs mb-1" style="color:#6b6b80">MongoDB</div><div id="stMongo" class="text-lg font-bold">—</div></div>
-            <div class="card p-5"><div class="text-xs mb-1" style="color:#6b6b80">Ping DB</div><div id="stPing" class="text-lg font-bold">—</div></div>
-          </div>
-          <div class="card p-5 max-w-3xl">
-            <div class="text-sm font-semibold mb-2">Rate limiting</div>
-            <p class="text-xs" style="color:#8b8b9e">Límite global: 200 requests / 15 min por IP en rutas /api/*. Si te pasas recibirás HTTP 429.</p>
-            <div class="text-xs mt-3" style="color:#5a5a6e" id="stUptime">Uptime: —</div>
-          </div>
-        </section>
-
-        <!-- PLAYGROUND -->
-        <section id="page-playground" class="page hidden">
-          <h1 class="text-2xl font-bold mb-6">API Playground</h1>
-          <div class="card p-6 max-w-2xl space-y-3">
-            <div class="flex gap-2">
-              <select id="pgMethod" style="max-width:120px"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select>
-              <input id="pgPath" placeholder="/api/health" value="/api/health"/>
-            </div>
-            <textarea id="pgBody" class="h-28 font-mono text-xs" placeholder='{"example":true}'></textarea>
-            <label class="flex items-center gap-2 text-xs" style="color:#8b8b9e"><input type="checkbox" id="pgAuth" checked style="width:auto"/> Usar token de sesión</label>
-            <button class="btn-primary" onclick="runPlayground()">Send</button>
-            <pre id="pgOut" class="text-xs p-3 rounded-lg overflow-auto font-mono" style="background:#0c0c12;color:#34d399;max-height:280px"></pre>
-          </div>
-        </section>
-
-        <!-- CHANGELOG -->
-        <section id="page-changelog" class="page hidden">
-          <h1 class="text-2xl font-bold mb-6">Changelog</h1>
-          <div class="space-y-4 max-w-2xl">
-            <div class="card p-5"><div class="text-sm font-semibold" style="color:#a78bfa">v2.0 — Feature drop</div><div class="text-xs mt-2" style="color:#8b8b9e">Key System, Hub, VIP, Admin, Webhooks, Leaderboard, Assets, Templates, Versions, Status, Themes, Playground, IP Blacklist, límite 15 scripts (ilimitado VIP).</div></div>
-            <div class="card p-5"><div class="text-sm font-semibold">v1.0 — Launch</div><div class="text-xs mt-2" style="color:#8b8b9e">Auth usuario/contraseña, scripts ofuscados, analytics, access denied page.</div></div>
-          </div>
-        </section>
-
-
-        <section id="page-studio" class="page hidden">
-          <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
-            <div>
-              <h1 class="text-2xl font-bold">Studio</h1>
-              <p class="text-xs mt-1" style="color:#5a5a6e">Editor libre · OpenRouter IA · números sin tapar código</p>
-            </div>
-            <div class="flex gap-2">
-              <button class="btn-ghost text-sm" onclick="studioDownload2()">Download</button>
-              <button class="btn-primary text-sm" onclick="studioToCreate()">Usar en Create →</button>
-            </div>
-          </div>
-          <div class="card p-4 mb-4 max-w-4xl">
-            <div class="text-sm font-semibold mb-1">Generador</div>
-            <div class="text-xs mb-2" style="color:#5a5a6e">IA real (OpenRouter). Ej: "aimbot con FOV 120", "ESP highlight", "auto farm de coins"</div>
-            <div class="flex gap-2 flex-wrap mb-2">
-              <input id="aiPrompt" class="flex-1 min-w-[180px]" placeholder="hazme un aimbot básico" onkeydown="if(event.key==='Enter')runAiGenerate()"/>
-              <button class="btn-primary" onclick="runAiGenerate()">Generar</button>
-            </div>
-            <div class="flex flex-wrap gap-2" id="aiQuick"></div>
-          </div>
-          <div class="editor-wrap max-w-4xl" id="studioEditor2">
-            <div class="editor-header">
-              <div class="flex items-center gap-2 text-xs">
-                <span style="color:#8b8b9e">&lt;/&gt; Studio · Lua</span>
-                <span class="badge badge-green">Live</span>
-              </div>
-              <div class="studio-toolbar">
-                <button type="button" class="btn-ghost" onclick="studioComment2()">//</button>
-                <button type="button" class="btn-ghost" onclick="studioFormat2()">Format</button>
-                <label class="btn-ghost cursor-pointer">Upload<input type="file" accept=".lua,.txt" class="hidden" onchange="uploadStudio(this)"/></label>
-                <button type="button" class="btn-ghost" onclick="document.getElementById('studioSource').value='';updateStudioLines()">Clear</button>
-              </div>
-            </div>
-            <div class="editor-body">
-              <div class="line-nums" id="studioLineNums">1</div>
-              <textarea id="studioSource" placeholder="-- código libre aquí" oninput="updateStudioLines()" onscroll="document.getElementById('studioLineNums').scrollTop=this.scrollTop" onkeydown="studioKey2(event)" spellcheck="false"></textarea>
-            </div>
-            <div class="studio-status"><span id="studioPos2">Ln 1, Col 1</span><span id="studioStats2">0 líneas</span></div>
-          </div>
-        </section>
-
-        <!-- SETTINGS -->
-        <section id="page-settings" class="page hidden">
-          <h1 class="text-2xl font-bold mb-6">Settings</h1>
-          <div class="grid gap-4 max-w-2xl">
-            <div class="card p-6">
-              <div class="text-sm font-semibold mb-1">Cuenta</div>
-              <div class="text-xs mb-4" style="color:#5a5a6e">Información de tu sesión</div>
-              <div class="flex items-center gap-3 mb-4">
-                <div class="avatar" id="settingsAvatar">?</div>
-                <div>
-                  <div class="font-medium" id="settingsUser">—</div>
-                  <div id="userBadges" class="flex flex-wrap gap-1 mt-1"></div>
-                </div>
-              </div>
-              <div id="premiumBox" class="mt-4 p-4 rounded-xl" style="background:#14120a;border:1px solid #3d3418">
-                <div class="text-sm font-semibold" style="color:#fbbf24">✦ Premium</div>
-                <div class="text-xs mt-1 mb-3" style="color:#8b8b9e">Publica en el Hub sin 500 runs, badge dorado y más prioridad.</div>
-                <div class="text-xs" style="color:#5a5a6e">Contacta a <b style="color:#a78bfa">OWNER</b> para activar Premium en tu cuenta.</div>
-              </div>
-              <button onclick="logout()" class="btn-ghost mt-4" style="color:#f87171;border-color:#3a1a1a">Cerrar sesión</button>
-            </div>
-            <div class="card p-6">
-              <div class="text-sm font-semibold mb-1">Preferencias</div>
-              <div class="text-xs mb-4" style="color:#5a5a6e">Opciones locales del panel</div>
-              <label class="flex items-center justify-between py-2 cursor-pointer">
-                <span class="text-sm" style="color:#a0a0b0">Animaciones</span>
-                <input type="checkbox" id="prefAnim" checked onchange="toggleAnim(this.checked)" style="width:auto;accent-color:#7c3aed"/>
-              </label>
-              <label class="flex items-center justify-between py-2 cursor-pointer">
-                <span class="text-sm" style="color:#a0a0b0">Copiar loadstring al crear</span>
-                <input type="checkbox" id="prefCopy" checked style="width:auto;accent-color:#7c3aed"/>
-              </label>
-              <div class="mt-4">
-                <div class="text-xs mb-2" style="color:#6b6b80">Theme</div>
-                <div class="flex flex-wrap gap-2">
-                  <button class="btn-ghost text-xs" onclick="setTheme('')">Purple</button>
-                  <button class="btn-ghost text-xs" onclick="setTheme('theme-neon')">Neon</button>
-                  <button class="btn-ghost text-xs" onclick="setTheme('theme-cyber')">Cyberpunk</button>
-                  <button class="btn-ghost text-xs" onclick="setTheme('theme-blood')">Blood</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-    </main>
-  </div>
-</div>
-
-<script>
-function scriptDownloadUrl(id){
-  return location.origin + '/api/v1/luascripts/public/' + id + '/download';
-}
-function scriptLoadstring(id){
-  return 'loadstring(game:HttpGet("' + scriptDownloadUrl(id) + '"))()';
-}
-
-
-
-let token = localStorage.getItem('qrex_token') || '';
-let currentUser = null;
-let mode = 'login';
-let chartDaily, chartScripts, chartHourly, chartOverview;
-
-const chartDefaults = {
-  responsive: true,
-  maintainAspectRatio: true,
-  plugins: { legend: { display: false } },
-  scales: {
-    x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#5a5a6e', font: { size: 11 } } },
-    y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#5a5a6e', font: { size: 11 } }, beginAtZero: true }
+</body>
+</html>`);
   }
-};
 
-function headers(){ return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }; }
+  if (!mongoReady && mongoose.connection.readyState !== 1) {
+    return res.status(503).type('text/plain').send('-- db offline');
+  }
 
-function setTab(m){
-  mode = m;
-  const btn = document.getElementById('authBtn');
-  const tL = document.getElementById('tabLogin');
-  const tR = document.getElementById('tabReg');
-  if (m === 'login') {
-    btn.textContent = 'Entrar';
-    tL.style.background = '#7c3aed'; tL.style.color = '#fff';
-    tR.style.background = 'transparent'; tR.style.color = '#6b6b80';
-  } else {
-    btn.textContent = 'Crear cuenta';
-    tR.style.background = '#7c3aed'; tR.style.color = '#fff';
-    tL.style.background = 'transparent'; tL.style.color = '#6b6b80';
-  }
-  document.getElementById('loginErr').classList.add('hidden');
-}
+  // límite por script+IP (60/min)
+  const sk = ip + ':' + req.params.id;
+  const now = Date.now();
+  if (!global.__rawScriptHits) global.__rawScriptHits = new Map();
+  let se = global.__rawScriptHits.get(sk);
+  if (!se || now - se.t > 60000) se = { n: 0, t: now };
+  se.n++;
+  global.__rawScriptHits.set(sk, se);
+  if (se.n > 60) return res.status(429).type('text/plain').send('-- slow down');
 
-function showApp(user){
-  currentUser = user || {};
-  document.getElementById('loginView').style.display = 'none';
-  document.getElementById('appView').style.display = 'block';
-  const name = user?.username || '?';
-  document.getElementById('userLabel').textContent = name;
-  document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
-  const sa = document.getElementById('settingsAvatar');
-  const su = document.getElementById('settingsUser');
-  if (sa) sa.textContent = name.charAt(0).toUpperCase();
-  if (su) su.textContent = name;
-  // badges
-  const badgeEl = document.getElementById('userBadges');
-  if (badgeEl) {
-    let b = '';
-    if (user?.role === 'admin') b += '<span class="chip" style="background:#1a1428;color:#a78bfa;border-color:#3b2a5c">ADMIN</span> ';
-    if (user?.premium) b += '<span class="chip" style="background:#1a1810;color:#fbbf24;border-color:#3d3418">VIP</span>';
-    badgeEl.innerHTML = b || '<span class="text-xs" style="color:#5a5a6e">Usuario QrexApi</span>';
-  }
-  const vip = document.getElementById('sidebarVip');
-  const adm = document.getElementById('sidebarAdmin');
-  const role = document.getElementById('sidebarRole');
-  if (vip) vip.classList.toggle('hidden', !user?.premium);
-  if (adm) adm.classList.toggle('hidden', user?.role !== 'admin');
-  if (role) {
-    if (user?.role === 'admin') role.textContent = 'Administrador';
-    else if (user?.premium) role.textContent = 'VIP · Premium';
-    else role.textContent = 'Usuario';
-  }
-  // admin nav
-  document.querySelectorAll('.admin-only').forEach(el => {
-    el.style.display = user?.role === 'admin' ? '' : 'none';
+  const s = await Script.findOne({ id: req.params.id });
+  if (!s) return res.status(404).type('text/plain').send('-- not found');
+
+  s.executions += 1;
+  await s.save();
+
+  await Execution.create({
+    scriptId: s.id,
+    scriptName: s.name,
+    ownerId: s.ownerId,
+    ip,
+    userAgent: req.headers['user-agent'] || ''
   });
-  document.getElementById('apiBase').textContent = location.origin;
-  loadStats();
-  loadScripts();
-  loadAnalytics();
-}
 
-function toggleAnim(on){
-  document.documentElement.style.setProperty('--anim', on ? '1' : '0');
-  if (!on) {
-    document.querySelectorAll('.page,.card,.sidebar').forEach(el => { el.style.animation = 'none'; });
-  }
-}
+  fireWebhooks(s.ownerId, 'script_exec', { scriptId: s.id, name: s.name, ip: String(ip).split(',')[0] });
 
-function logout(){ token = ''; localStorage.removeItem('qrex_token'); location.reload(); }
-
-function setErr(msg){
-  const el = document.getElementById('loginErr');
-  el.classList.remove('hidden');
-  el.textContent = msg || 'Error';
-}
-
-async function doAuth(){
-  const username = document.getElementById('authUser').value.trim();
-  const password = document.getElementById('authPass').value;
-  const btn = document.getElementById('authBtn');
-  if (!username || !password) { setErr('Pon usuario y contraseña'); return; }
-  btn.disabled = true; btn.textContent = '...';
-  document.getElementById('loginErr').classList.add('hidden');
-  try {
-    const url = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
-    const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username,password}) });
-    const text = await r.text();
-    let d;
-    try { d = JSON.parse(text); }
-    catch {
-      const snip = (text || '').replace(/\s+/g,' ').slice(0,80);
-      throw new Error('API no JSON (HTTP '+r.status+'). ¿Servidor caído? ' + snip);
-    }
-    if (!r.ok) throw new Error(d.error || ('Error HTTP '+r.status));
-    token = d.token; localStorage.setItem('qrex_token', token); showApp(d.user);
-  } catch(e) { setErr(e.message); }
-  finally { btn.disabled = false; btn.textContent = mode === 'login' ? 'Entrar' : 'Crear cuenta'; }
-}
-
-document.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && document.getElementById('loginView').style.display !== 'none') doAuth();
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Robots-Tag', 'noindex');
+  res.type('text/plain').send(s.obfuscated);
 });
 
-window.onload = function(){
-  try { refreshAiChips(); updateLines(); } catch(e) {}
+app.get('/api/stats', auth, needMongo, async (req, res) => {
+  const scripts = await Script.find({ ownerId: req.user.sub });
+  const totalExec = scripts.reduce((a, s) => a + (s.executions || 0), 0);
+  res.json({ scripts: scripts.length, executions: totalExec });
+});
 
-  if (token) {
-    fetch('/api/me', { headers: headers() })
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(showApp).catch(logout);
-  }
-  updateLines();
-};
+app.get('/api/executions', auth, needMongo, async (req, res) => {
+  const logs = await Execution.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).limit(100);
+  res.json(logs);
+});
 
-const pageNames = { overview:'Overview', scripts:'Lua Scripts', hub:'Script Hub', keys:'Key System', webhooks:'Webhooks', leaderboard:'Leaderboard', assets:'My Assets', templates:'Templates', status:'System Status', playground:'API Playground', changelog:'Changelog', create:'Create Script', studio:'Studio', executions:'Analytics', apiinfo:'API Info', settings:'Settings', admin:'Admin Panel' };
 
-function go(p){
-  document.querySelectorAll('.page').forEach(x => x.classList.add('hidden'));
-  document.getElementById('page-' + p).classList.remove('hidden');
-  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-  const btn = document.querySelector('[data-page="'+p+'"]');
-  if (btn) btn.classList.add('active');
-  document.getElementById('breadcrumb').textContent = pageNames[p] || p;
-  if (p === 'scripts') loadScripts();
-  if (p === 'hub') loadHub();
-  if (p === 'keys') loadKeysPage();
-  if (p === 'webhooks') loadWebhooks();
-  if (p === 'leaderboard') loadLeaderboard();
-  if (p === 'assets') loadAssets();
-  if (p === 'status') loadStatus();
-  if (p === 'create') fillCreateProviders();
-  if (p === 'studio') { try { refreshAiChips(); updateLines(); } catch(e) {} }
-  if (p === 'admin') loadAdmin();
-  if (p === 'overview') { loadStats(); loadAnalytics(); }
-  if (p === 'executions') loadAnalytics();
-}
+// ========== HUB PÚBLICO ==========
+const HUB_MIN_EXECS = 500;
 
-function esc(t){ const d=document.createElement('div'); d.textContent=t||''; return d.innerHTML; }
-
-function updateLines(){
-  const src = document.getElementById('sSource');
-  const nums = document.getElementById('lineNums');
-  if (!src || !nums) return;
-  const lines = src.value.split('\n');
-  const n = Math.max(1, lines.length);
-  let out = '';
-  for (let i = 1; i <= n; i++) out += i + '\n';
-  nums.textContent = out;
-  // keep heights in sync via scroll only; same line-height
-  nums.scrollTop = src.scrollTop;
-  const pos = document.getElementById('studioPos');
-  const st = document.getElementById('studioStats');
-  if (st) st.textContent = n + ' líneas · ' + src.value.length + ' chars';
-  if (pos) {
-    const off = src.selectionStart || 0;
-    const before = src.value.slice(0, off);
-    const ln = before.split('\n').length;
-    const col = before.length - before.lastIndexOf('\n');
-    pos.textContent = 'Ln ' + ln + ', Col ' + col;
-  }
-}
-function onStudioInput(){ updateLines(); refreshAiChips(); }
-function syncStudioScroll(){
-  const src = document.getElementById('sSource');
-  const nums = document.getElementById('lineNums');
-  if (src && nums) nums.scrollTop = src.scrollTop;
-}
-function studioKey(e){
-  const src = document.getElementById('sSource');
-  if (!src) return;
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const s = src.selectionStart, en = src.selectionEnd;
-    src.value = src.value.slice(0,s) + '  ' + src.value.slice(en);
-    src.selectionStart = src.selectionEnd = s + 2;
-    updateLines();
-  }
-  if (e.key === '/' && (e.ctrlKey || e.metaKey)) {
-    e.preventDefault();
-    studioComment();
-  }
-  if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
-    e.preventDefault();
-    toast('Usa Create/Save para guardar en la nube');
-  }
-  setTimeout(updateLines, 0);
-}
-function studioInsertTab(){
-  const src = document.getElementById('sSource');
-  if (!src) return;
-  const s = src.selectionStart;
-  src.value = src.value.slice(0,s) + '  ' + src.value.slice(src.selectionEnd);
-  src.selectionStart = src.selectionEnd = s + 2;
-  src.focus(); updateLines();
-}
-function studioComment(){
-  const src = document.getElementById('sSource');
-  if (!src) return;
-  const s = src.selectionStart, en = src.selectionEnd;
-  let a = src.value.slice(0,s), mid = src.value.slice(s,en), b = src.value.slice(en);
-  if (!mid) {
-    // comment current line
-    const lineStart = src.value.lastIndexOf('\n', s-1) + 1;
-    src.value = src.value.slice(0,lineStart) + '-- ' + src.value.slice(lineStart);
-  } else {
-    mid = mid.split('\n').map(l => l.startsWith('--') ? l.replace(/^--\s?/,'') : '-- '+l).join('\n');
-    src.value = a + mid + b;
-  }
-  src.focus(); updateLines();
-}
-function studioFormat(){
-  const src = document.getElementById('sSource');
-  if (!src) return;
-  // simple indent by keywords
-  const lines = src.value.split('\n');
-  let ind = 0;
-  const openers = /\b(function|then|do|repeat)\b/;
-  const closers = /\b(end|until|else|elseif)\b/;
-  const out = lines.map(line => {
-    const t = line.trim();
-    if (!t) return '';
-    if (closers.test(t) && !/\bthen\b/.test(t) && !/\bfunction\b/.test(t)) ind = Math.max(0, ind-1);
-    const r = '  '.repeat(ind) + t;
-    if (openers.test(t) && !t.includes('end')) ind++;
-    if (/\belse\b/.test(t) || /\belseif\b/.test(t)) { /* keep */ }
-    return r;
-  });
-  src.value = out.join('\n');
-  updateLines();
-  toast('Formato aplicado');
-}
-function studioDownload(){
-  const src = document.getElementById('sSource');
-  const name = (document.getElementById('sName')?.value || 'script').replace(/[^\\w.-]+/g,'_');
-  const blob = new Blob([src.value], {type:'text/plain'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name + '.lua';
-  a.click();
-  URL.revokeObjectURL(a.href);
-  toast('Descargado ' + name + '.lua');
-}
-function studioClear(){
-  if (!confirm('¿Limpiar editor?')) return;
-  document.getElementById('sSource').value = '';
-  updateLines();
-}
-function studioToggleAi(){
-  const p = document.getElementById('aiPanel');
-  if (p) p.style.display = p.style.display === 'none' ? '' : 'none';
-}
-const AI_SUGGESTIONS = [
-  { t: 'GetService Players', c: 'local Players = game:GetService("Players")\nlocal LocalPlayer = Players.LocalPlayer\n' },
-  { t: 'Tween', c: 'local TweenService = game:GetService("TweenService")\nTweenService:Create(part, TweenInfo.new(0.3), {Transparency = 1}):Play()\n' },
-  { t: 'HttpGet', c: 'local data = game:HttpGet("https://example.com")\nprint(data)\n' },
-  { t: 'pcall safe', c: 'local ok, err = pcall(function()\n  -- code\nend)\nif not ok then warn(err) end\n' },
-  { t: 'Notify', c: 'game:GetService("StarterGui"):SetCore("SendNotification", {Title = "Qrex", Text = "Hola", Duration = 3})\n' },
-  { t: 'Loop wait', c: 'while task.wait(1) do\n  -- loop\nend\n' },
-  { t: 'Remote fire', c: 'local re = game:GetService("ReplicatedStorage"):WaitForChild("Remote")\nre:FireServer()\n' },
-  { t: 'Character', c: 'local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()\nlocal hum = char:WaitForChild("Humanoid")\n' },
-  { t: 'UI ScreenGui', c: 'local sg = Instance.new("ScreenGui")\nsg.Parent = game.CoreGui\nlocal f = Instance.new("Frame", sg)\nf.Size = UDim2.fromOffset(300, 200)\n' },
-  { t: 'Qrex Key verify', c: '-- Ver key (ajusta provider)\n-- usa el loader del Key System\n' },
-];
-function refreshAiChips(){
-  const box = document.getElementById('aiChips');
-  if (!box) return;
-  const src = (document.getElementById('sSource')?.value || '').toLowerCase();
-  let list = AI_SUGGESTIONS;
-  if (src.includes('player')) list = AI_SUGGESTIONS.filter(x => /player|character|humanoid|notify/i.test(x.t+x.c)).concat(AI_SUGGESTIONS);
-  const seen = new Set();
-  box.innerHTML = list.filter(x => { if(seen.has(x.t)) return false; seen.add(x.t); return true; }).slice(0,10).map((x,i) =>
-    '<span class="ai-chip" onclick="insertAi('+i+')">'+x.t+'</span>'
-  ).join('');
-  window.__aiList = list.filter((x,i,a)=>a.findIndex(y=>y.t===x.t)===i).slice(0,10);
-}
-function insertAi(i){
-  const list = window.__aiList || AI_SUGGESTIONS;
-  const item = list[i];
-  if (!item) return;
-  const src = document.getElementById('sSource');
-  const s = src.selectionStart || src.value.length;
-  const code = item.c;
-  src.value = src.value.slice(0, s) + code + src.value.slice(src.selectionEnd || s);
-  src.focus();
-  updateLines();
-  toast('Insertado: ' + item.t);
-}
-
-function uploadFile(input){
-  const f = input.files && input.files[0];
-  if (!f) return;
-  const reader = new FileReader();
-  reader.onload = () => { document.getElementById('sSource').value = reader.result; updateLines(); };
-  reader.readAsText(f);
-  input.value = '';
-}
-
-async function loadStats(){
+app.get('/api/hub', async (req, res) => {
   try {
-    const r = await fetch('/api/stats', { headers: headers() });
-    if (!r.ok) return;
-    const d = await r.json();
-    document.getElementById('stScripts').textContent = d.scripts || 0;
-    document.getElementById('stExec').textContent = d.executions || 0;
-  } catch {}
-}
-
-let allScripts = [];
-let editingId = null;
-
-function toast(msg, type){
-  const w = document.getElementById('toasts');
-  if (!w) return;
-  const t = document.createElement('div');
-  t.className = 'toast ' + (type || 'ok');
-  t.innerHTML = '<span class="t-icon">' + (type === 'err' ? '✕' : '✓') + '</span><span>' + esc(msg) + '</span>';
-  w.appendChild(t);
-  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 2800);
-}
-
-function filterScripts(){
-  const q = (document.getElementById('scriptSearch')?.value || '').toLowerCase().trim();
-  renderScripts(q ? allScripts.filter(s => (s.name||'').toLowerCase().includes(q) || (s.description||'').toLowerCase().includes(q)) : allScripts);
-}
-
-function renderScripts(list){
-  const el = document.getElementById('scriptsList');
-  const host = location.origin;
-  if (!list.length) {
-    el.innerHTML = '<div class="card empty-state"><svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg><div>No hay scripts</div><button onclick="go(\'create\')" class="btn-primary mt-4 text-sm">Crear el primero</button></div>';
-    return;
-  }
-  el.innerHTML = list.map(s => {
-    const ls = scriptLoadstring(s.id);
-    const date = s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '';
-    return '<div class="card p-5">'+
-      '<div class="flex justify-between items-start mb-3 gap-3">'+
-        '<div class="min-w-0">'+
-          '<div class="font-semibold truncate" style="color:#c4b5fd">'+esc(s.name)+'</div>'+
-          '<div class="text-xs mt-0.5 truncate" style="color:#5a5a6e">'+esc(s.description||'Sin descripción')+'</div>'+
-          '<div class="flex flex-wrap gap-2 mt-2">'+
-            '<span class="chip">'+(s.executions||0)+' runs</span>'+
-            '<span class="chip">'+(s.obfMode==='local'?'XOR×5':(s.obfMode==='none'||s.doObfuscate===false)?'Plain+AT':'Qyrex')+'</span>'+
-            (date ? '<span class="chip">'+esc(date)+'</span>' : '')+
-            '<span class="chip" style="font-family:monospace;font-size:10px">'+esc((s.id||'').slice(0,10))+'…</span>'+
-          '</div>'+
-        '</div>'+
-        '<div class="script-actions shrink-0">'+
-          '<button class="icon-btn" title="Editar" onclick="editScript(\''+s.id+'\')">'+
-            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>'+
-          '</button>'+
-          '<button class="icon-btn" title="Copiar loadstring" onclick="copyLs(\''+ls.replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">'+
-            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>'+
-          '</button>'+
-          '<button class="icon-btn" title="Copiar ID" onclick="copyLs(\''+s.id+'\')">'+
-            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>'+
-          '</button>'+
-          '<button class="icon-btn" title="Versiones" onclick="showVersions(\''+s.id+'\')">⏱</button>'+
-          '<button class="icon-btn danger" title="Eliminar" onclick="delScript(\''+s.id+'\')">'+
-            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>'+
-          '</button>'+
-        '</div>'+
-      '</div>'+
-      '<pre class="text-[11px] overflow-x-auto whitespace-pre-wrap break-all p-3 rounded-lg" style="background:#0c0c12;color:#5a5a6e">'+esc(ls)+'</pre>'+
-    '</div>';
-  }).join('');
-}
-
-function copyLs(text){
-  navigator.clipboard.writeText(text).then(() => toast('Copiado al portapapeles')).catch(() => toast('No se pudo copiar', 'err'));
-}
-
-async function loadScripts(){
-  try {
-    const r = await fetch('/api/scripts', { headers: headers() });
-    if (!r.ok) return;
-    allScripts = await r.json();
-    filterScripts();
-  } catch {}
-}
-
-async function editScript(id){
-  try {
-    const r = await fetch('/api/scripts/' + id, { headers: headers() });
-    if (!r.ok) { toast('No se pudo cargar el script', 'err'); return; }
-    const s = await r.json();
-    editingId = s.id;
-    document.getElementById('editId').value = s.id;
-    document.getElementById('sName').value = s.name || '';
-    document.getElementById('sDesc').value = s.description || '';
-    document.getElementById('sSource').value = s.source || '';
-    const om = document.getElementById('sObfMode');
-    if (om) om.value = s.obfMode || (s.doObfuscate === false ? 'none' : 'qrex');
-    document.getElementById('createTitle').textContent = 'Edit Script';
-    document.getElementById('createSubtitle').textContent = 'Modificando · ' + (s.name || id);
-    document.getElementById('createBtnLabel').textContent = 'Save changes';
-    document.getElementById('createOutWrap').classList.add('hidden');
-    updateLines();
-    go('create');
-    toast('Script cargado para editar');
-  } catch(e) {
-    toast(e.message || 'Error', 'err');
-  }
-}
-
-function resetCreateForm(){
-  editingId = null;
-  document.getElementById('editId').value = '';
-  document.getElementById('sName').value = '';
-  document.getElementById('sDesc').value = '';
-  document.getElementById('sSource').value = '';
-  document.getElementById('createTitle').textContent = 'Create Script';
-  document.getElementById('createSubtitle').textContent = 'Create or modify Lua script';
-  document.getElementById('createBtnLabel').textContent = 'Create';
-  document.getElementById('createOutWrap').classList.add('hidden');
-  const om2 = document.getElementById('sObfMode'); if (om2) om2.value = 'qrex';
-  updateLines();
-}
-
-async function createScript(){
-  const name = document.getElementById('sName').value.trim();
-  const description = document.getElementById('sDesc').value.trim();
-  const source = document.getElementById('sSource').value;
-  const btn = document.getElementById('createBtn');
-  const out = document.getElementById('createOut');
-  const wrap = document.getElementById('createOutWrap');
-  const editId = document.getElementById('editId').value || editingId;
-  if (!name || !source) { wrap.classList.remove('hidden'); out.value = 'Name y source son obligatorios'; return; }
-  btn.disabled = true;
-  const prev = document.getElementById('createBtnLabel').textContent;
-  document.getElementById('createBtnLabel').textContent = editId ? 'Saving...' : 'Creating...';
-  try {
-    let r, d;
-    if (editId) {
-      r = await fetch('/api/scripts/' + editId, {
-        method: 'PUT', headers: headers(),
-        body: JSON.stringify({ name, description, source, obfMode: (document.getElementById('sObfMode')||{}).value || 'qrex', keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
-      });
-      d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Error al guardar');
-      toast('Script actualizado');
-      wrap.classList.remove('hidden');
-      const host = location.origin;
-      out.value = scriptLoadstring(editId);
-      const prefCopy = document.getElementById('prefCopy');
-      if (prefCopy && prefCopy.checked) { try { navigator.clipboard.writeText(out.value); } catch {} }
-      resetCreateForm();
-      loadScripts(); loadStats();
-      go('scripts');
-    } else {
-      r = await fetch('/api/scripts', {
-        method:'POST', headers: headers(),
-        body: JSON.stringify({ name, description, source, obfMode: (document.getElementById('sObfMode')||{}).value || 'qrex', keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
-      });
-      d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Error');
-      wrap.classList.remove('hidden');
-      out.value = d.loadstring || JSON.stringify(d);
-      const prefCopy = document.getElementById('prefCopy');
-      if (prefCopy && prefCopy.checked && d.loadstring) {
-        try { navigator.clipboard.writeText(d.loadstring); } catch {}
-      }
-      toast('Script creado');
-      document.getElementById('sName').value = '';
-      document.getElementById('sDesc').value = '';
-      document.getElementById('sSource').value = '';
-      updateLines();
-      loadScripts(); loadStats();
+    if (!mongoReady && mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'DB offline' });
     }
-  } catch(e) {
-    wrap.classList.remove('hidden');
-    out.value = 'Error: ' + e.message;
-    toast(e.message, 'err');
-  } finally {
-    btn.disabled = false;
-    document.getElementById('createBtnLabel').textContent = prev === 'Saving...' || prev === 'Creating...' ? (editId ? 'Save changes' : 'Create') : prev;
-    if (!editId) document.getElementById('createBtnLabel').textContent = 'Create';
-  }
-}
-
-async function delScript(id){
-  if (!confirm('¿Eliminar este script de forma permanente?')) return;
-  try {
-    const r = await fetch('/api/scripts/' + id, { method: 'DELETE', headers: headers() });
-    if (!r.ok) throw new Error('No se pudo eliminar');
-    toast('Script eliminado');
-    loadScripts(); loadStats(); loadAnalytics();
-  } catch(e) {
-    toast(e.message || 'Error', 'err');
-  }
-}
-
-
-let hubAll = [];
-
-async function loadHub(){
-  try {
-    const r = await fetch('/api/hub');
-    if (!r.ok) return;
-    hubAll = await r.json();
-    filterHub();
-    await fillHubSelect();
-  } catch(e) { console.error(e); }
-}
-
-function filterHub(){
-  const q = (document.getElementById('hubSearch')?.value || '').toLowerCase().trim();
-  const list = q ? hubAll.filter(h => (h.name||'').toLowerCase().includes(q) || (h.ownerUsername||'').toLowerCase().includes(q) || (h.description||'').toLowerCase().includes(q)) : hubAll;
-  renderHub(list);
-}
-
-function renderHub(list){
-  const el = document.getElementById('hubList');
-  if (!el) return;
-  if (!list.length) {
-    el.innerHTML = '<div class="card empty-state"><div class="text-sm">No hay scripts públicos todavía</div><div class="text-xs mt-2">Publica el tuyo cuando tenga 500+ ejecuciones</div></div>';
-    return;
-  }
-  el.innerHTML = list.map(h => {
-    const id = h._id || h.id;
-    const mine = false; // filled below with data attr
-    return '<div class="card p-5" data-hub-id="'+esc(id)+'">'+
-      '<div class="flex justify-between items-start gap-3 mb-3">'+
-        '<div class="min-w-0">'+
-          '<div class="font-semibold" style="color:#c4b5fd">'+esc(h.name)+'</div>'+
-          '<div class="text-xs mt-0.5" style="color:#5a5a6e">'+esc(h.description||'')+'</div>'+
-          '<div class="flex flex-wrap gap-2 mt-2">'+
-            '<span class="chip">@'+esc(h.ownerUsername||'user')+'</span>'+
-            '<span class="chip">'+(h.executionsAtPublish||0)+' runs al publicar</span>'+
-            '<span class="chip">'+(h.views||0)+' views</span>'+
-          '</div>'+
-        '</div>'+
-        '<div class="script-actions">'+
-          '<button class="icon-btn" title="Copiar loadstring" onclick="copyHubLs(\''+id+'\',\''+ (h.loadstring||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'") +'\')">'+
-            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>'+
-          '</button>'+
-          '<button class="icon-btn danger hub-del" data-owner="'+esc(h.ownerId||'')+'" title="Quitar del hub" onclick="delHub(\''+id+'\')" style="display:none">'+
-            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>'+
-          '</button>'+
-        '</div>'+
-      '</div>'+
-      '<pre class="text-[11px] overflow-x-auto whitespace-pre-wrap break-all p-3 rounded-lg" style="background:#0c0c12;color:#5a5a6e">'+esc(h.loadstring)+'</pre>'+
-    '</div>';
-  }).join('');
-  // show delete for own items
-  try {
-    const payload = JSON.parse(atob((token.split('.')[1]||'').replace(/-/g,'+').replace(/_/g,'/')));
-    const uid = payload.sub;
-    document.querySelectorAll('.hub-del').forEach(btn => {
-      if (btn.getAttribute('data-owner') === uid) btn.style.display = 'inline-flex';
-    });
-  } catch {}
-}
-
-function copyHubLs(id, ls){
-  copyLs(ls);
-  fetch('/api/hub/'+id+'/view', { method:'POST' }).catch(()=>{});
-}
-
-async function fillHubSelect(){
-  const sel = document.getElementById('hubScriptSelect');
-  if (!sel) return;
-  try {
-    const r = await fetch('/api/scripts', { headers: headers() });
-    if (!r.ok) return;
-    const list = await r.json();
-    const prem = !!(currentUser && currentUser.premium);
-    const ok = prem ? list : list.filter(s => (s.executions||0) >= 500);
-    if (!ok.length) {
-      sel.innerHTML = prem
-        ? '<option value="">No tienes scripts</option>'
-        : '<option value="">Ningún script con 500+ runs (o activa Premium)</option>';
-      return;
-    }
-    sel.innerHTML = ok.map(s => '<option value="'+s.id+'">'+esc(s.name)+' ('+(s.executions||0)+' runs)'+(prem && (s.executions||0)<500 ? ' · Premium' : '')+'</option>').join('');
-    const first = ok[0];
-    if (first && !document.getElementById('hubName').value) {
-      document.getElementById('hubName').value = first.name || '';
-    }
-  } catch {}
-}
-
-async function loadAdmin(){
-  if (!currentUser || currentUser.role !== 'admin') { toast('Solo admin', 'err'); return; }
-  try {
-    const st = await fetch('/api/admin/stats', { headers: headers() }).then(r=>r.json());
-    document.getElementById('aUsers').textContent = st.users ?? '—';
-    document.getElementById('aScripts').textContent = st.scripts ?? '—';
-    document.getElementById('aHub').textContent = st.hub ?? '—';
-    document.getElementById('aPrem').textContent = st.premium ?? '—';
-  } catch {}
-  try {
-    const users = await fetch('/api/admin/users', { headers: headers() }).then(r=>r.json());
-    document.getElementById('adminUsers').innerHTML = (users||[]).map(u =>
-      '<tr><td>@'+esc(u.username)+'</td><td>'+esc(u.role)+'</td><td style="color:'+(u.premium?'#fbbf24':'#5a5a6e')+'">'+(u.premium?'Yes':'No')+'</td><td style="color:#5a5a6e">'+(u.createdAt?new Date(u.createdAt).toLocaleDateString():'-')+'</td></tr>'
-    ).join('') || '<tr><td colspan="4" class="text-center py-6" style="color:#5a5a6e">Sin usuarios</td></tr>';
-  } catch {}
-  loadAdminScripts();
-  loadAdminBlacklist();
-  try {
-    const hub = await fetch('/api/hub').then(r=>r.json());
-    document.getElementById('adminHub').innerHTML = (hub||[]).map(h => {
-      const id = h._id || h.id;
-      return '<tr><td>'+esc(h.name)+'</td><td>@'+esc(h.ownerUsername)+'</td><td>'+(h.views||0)+'</td><td><button class="btn-ghost text-xs" style="color:#f87171;border-color:#3a1a1a" onclick="adminDelHub(\''+id+'\')">Eliminar</button></td></tr>';
-    }).join('') || '<tr><td colspan="4" class="text-center py-6" style="color:#5a5a6e">Vacío</td></tr>';
-  } catch {}
-}
-
-async function loadAdminScripts(){
-  try {
-    const list = await fetch('/api/admin/scripts', { headers: headers() }).then(r=>r.json());
-    document.getElementById('adminScripts').innerHTML = (list||[]).map(s =>
-      '<tr><td>'+esc(s.name)+'</td><td style="color:#5a5a6e;font-size:11px">'+esc((s.ownerId||'').slice(0,8))+'…</td><td>'+(s.executions||0)+'</td><td><button class="btn-ghost text-xs" style="color:#f87171;border-color:#3a1a1a" onclick="adminDelScript(\''+s.id+'\')">Eliminar</button></td></tr>'
-    ).join('') || '<tr><td colspan="4" class="text-center py-6" style="color:#5a5a6e">Vacío</td></tr>';
-  } catch {}
-}
-
-async function adminSetPremium(on){
-  const username = document.getElementById('premUser').value.trim();
-  const days = document.getElementById('premDays').value || 30;
-  if (!username) { toast('Pon username', 'err'); return; }
-  try {
-    const r = await fetch('/api/admin/premium', {
-      method:'POST', headers: headers(),
-      body: JSON.stringify({ username, premium: on, days: Number(days) })
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || 'Error');
-    toast(on ? ('Premium activado: @'+username) : ('Premium quitado: @'+username));
-    loadAdmin();
-  } catch(e) { toast(e.message, 'err'); }
-}
-
-async function adminDelScript(id){
-  if (!confirm('¿Eliminar este script del sistema?')) return;
-  try {
-    const r = await fetch('/api/admin/scripts/'+id, { method:'DELETE', headers: headers() });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error||'Error');
-    toast('Script eliminado');
-    loadAdminScripts();
-  } catch(e) { toast(e.message,'err'); }
-}
-
-async function adminDelHub(id){
-  if (!confirm('¿Quitar del hub?')) return;
-  try {
-    const r = await fetch('/api/admin/hub/'+id, { method:'DELETE', headers: headers() });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error||'Error');
-    toast('Quitado del hub');
-    loadAdmin();
-  } catch(e) { toast(e.message,'err'); }
-}
-
-
-async function publishHub(){
-  const scriptId = document.getElementById('hubScriptSelect').value;
-  const name = document.getElementById('hubName').value.trim();
-  const description = document.getElementById('hubDesc').value.trim();
-  const err = document.getElementById('hubErr');
-  const btn = document.getElementById('hubPublishBtn');
-  err.classList.add('hidden');
-  if (!scriptId) { err.textContent = 'Selecciona un script con 500+ ejecuciones'; err.classList.remove('hidden'); return; }
-  if (!name) { err.textContent = 'Pon un nombre'; err.classList.remove('hidden'); return; }
-  btn.disabled = true; btn.textContent = 'Publicando...';
-  try {
-    const r = await fetch('/api/hub', {
-      method:'POST', headers: headers(),
-      body: JSON.stringify({ scriptId, name, description })
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || 'Error');
-    toast('Publicado en el Hub');
-    document.getElementById('hubPublishCard').classList.add('hidden');
-    document.getElementById('hubName').value = '';
-    document.getElementById('hubDesc').value = '';
-    loadHub();
-  } catch(e) {
-    err.textContent = e.message;
-    err.classList.remove('hidden');
-    toast(e.message, 'err');
-  } finally {
-    btn.disabled = false; btn.textContent = 'Publicar';
-  }
-}
-
-async function delHub(id){
-  if (!confirm('¿Quitar este script del Hub público?')) return;
-  try {
-    const r = await fetch('/api/hub/'+id, { method:'DELETE', headers: headers() });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || 'Error');
-    toast('Eliminado del Hub');
-    loadHub();
-  } catch(e) { toast(e.message, 'err'); }
-}
-
-
-async function loadKeysPage(){
-  await loadProviders();
-  await loadKeysTable();
-  updateLoaderSnippet();
-}
-
-async function loadProviders(){
-  try {
-    const r = await fetch('/api/providers', { headers: headers() });
-    if (!r.ok) return;
-    const list = await r.json();
-    const el = document.getElementById('provList');
-    const sel = document.getElementById('keyProvSelect');
-    if (!list.length) {
-      el.innerHTML = '<div style="color:#5a5a6e">No hay providers. Crea uno.</div>';
-      sel.innerHTML = '<option value="">—</option>';
-      return;
-    }
-    el.innerHTML = list.map(p =>
-      '<div class="flex justify-between items-center py-2 border-b" style="border-color:#1a1a24">'+
-        '<div><span class="font-medium" style="color:#c4b5fd">'+esc(p.name)+'</span>'+
-        '<div class="text-xs" style="color:#5a5a6e">'+p.keyValidityHours+'h · HWID '+p.hwidLimit+(p.enabled===false?' · OFF':'')+'</div></div>'+
-        '<button class="icon-btn danger" title="Eliminar" onclick="delProvider(\''+p._id+'\')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>'+
-      '</div>'
-    ).join('');
-    sel.innerHTML = list.map(p => '<option value="'+p._id+'">'+esc(p.name)+'</option>').join('');
-  } catch(e) { console.error(e); }
-}
-
-async function createProvider(){
-  const name = document.getElementById('provName').value.trim();
-  const keyValidityHours = document.getElementById('provHours').value;
-  const hwidLimit = document.getElementById('provHwid').value;
-  try {
-    const r = await fetch('/api/providers', {
-      method:'POST', headers: headers(),
-      body: JSON.stringify({ name, keyValidityHours, hwidLimit })
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || 'Error');
-    toast('Provider creado');
-    document.getElementById('provName').value = '';
-    document.getElementById('provCard').classList.add('hidden');
-    loadProviders();
-    updateLoaderSnippet();
-  } catch(e) { toast(e.message, 'err'); }
-}
-
-async function delProvider(id){
-  if (!confirm('¿Eliminar provider y sus keys?')) return;
-  await fetch('/api/providers/'+id, { method:'DELETE', headers: headers() });
-  toast('Provider eliminado');
-  loadKeysPage();
-}
-
-async function generateKeys(){
-  const providerId = document.getElementById('keyProvSelect').value;
-  const amount = document.getElementById('keyAmount').value;
-  const validityHours = document.getElementById('keyHours').value;
-  const hwidLimit = document.getElementById('keyHwidLim').value;
-  const note = document.getElementById('keyNote').value;
-  if (!providerId) { toast('Elige provider', 'err'); return; }
-  try {
-    const r = await fetch('/api/keys', {
-      method:'POST', headers: headers(),
-      body: JSON.stringify({ providerId, amount, validityHours: Number(validityHours), hwidLimit, note })
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || 'Error');
-    const keys = (d.keys || []).map(k => k.key).join('\n');
-    const out = document.getElementById('keyGenOut');
-    out.classList.remove('hidden');
-    out.value = keys;
-    toast((d.keys||[]).length + ' key(s) generadas');
-    loadKeysTable();
-  } catch(e) { toast(e.message, 'err'); }
-}
-
-async function loadKeysTable(){
-  try {
-    const r = await fetch('/api/keys', { headers: headers() });
-    if (!r.ok) return;
-    const list = await r.json();
-    const tb = document.getElementById('keysTable');
-    if (!list.length) {
-      tb.innerHTML = '<tr><td colspan="6" class="text-center py-8" style="color:#5a5a6e">Sin keys</td></tr>';
-      return;
-    }
-    tb.innerHTML = list.map(k => {
-      const exp = k.expiresAt ? new Date(k.expiresAt).toLocaleString() : '∞';
-      const hw = (k.hwids||[]).length + '/' + (k.hwidLimit||1);
-      const off = k.enabled === false;
-      return '<tr style="'+(off?'opacity:.5':'')+'">'+
-        '<td class="font-mono text-xs">'+esc(k.key)+' <button class="btn-ghost text-[10px] ml-1" onclick="copyLs(\''+k.key+'\')">copy</button></td>'+
-        '<td>'+esc(k.providerName)+'</td>'+
-        '<td>'+hw+'</td>'+
-        '<td class="text-xs" style="color:#8b8b9e">'+esc(exp)+'</td>'+
-        '<td>'+(k.uses||0)+'</td>'+
-        '<td class="script-actions">'+
-          '<button class="icon-btn" title="Reset HWID" onclick="resetHwid(\''+k._id+'\')">↺</button>'+
-          '<button class="icon-btn" title="On/Off" onclick="toggleKey(\''+k._id+'\')">'+(off?'ON':'OFF')+'</button>'+
-          '<button class="icon-btn danger" onclick="delKey(\''+k._id+'\')">×</button>'+
-        '</td></tr>';
-    }).join('');
-  } catch(e) { console.error(e); }
-}
-
-async function resetHwid(id){
-  await fetch('/api/keys/'+id+'/reset-hwid', { method:'POST', headers: headers() });
-  toast('HWID reseteado');
-  loadKeysTable();
-}
-async function toggleKey(id){
-  await fetch('/api/keys/'+id+'/toggle', { method:'POST', headers: headers() });
-  loadKeysTable();
-}
-async function delKey(id){
-  if (!confirm('¿Borrar key?')) return;
-  await fetch('/api/keys/'+id, { method:'DELETE', headers: headers() });
-  toast('Key eliminada');
-  loadKeysTable();
-}
-
-function updateLoaderSnippet(){
-  const base = location.origin;
-  const sel = document.getElementById('keyProvSelect');
-  const provName = sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : 'MyProvider';
-  const snip = `-- QrexApi Key Loader
-local HttpService = game:GetService("HttpService")
-local cfg = {
-  api = "${base}",
-  provider = "${provName.replace(/"/g, '')}",
-}
-local function getHwid()
-  local ok, id = pcall(function()
-    return game:GetService("RbxAnalyticsService"):GetClientId()
-  end)
-  return ok and id or tostring(game.Players.LocalPlayer.UserId)
-end
-local function verify(key)
-  local body = HttpService:JSONEncode({ key = key, hwid = getHwid(), provider = cfg.provider })
-  local res = request({
-    Url = cfg.api .. "/api/keys/verify",
-    Method = "POST",
-    Headers = { ["Content-Type"] = "application/json" },
-    Body = body
-  })
-  if not res or not res.Body then return false end
-  local ok, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
-  return ok and data and data.success
-end
--- Ejemplo:
--- if verify("TU-KEY-AQUI") then
---   print("OK")
---   -- load tu script
--- else
---   warn("Key inválida")
--- end`
-  const el = document.getElementById('loaderSnippet');
-  if (el) el.textContent = snip;
-}
-
-
-function setTheme(cls){
-  document.body.classList.remove('theme-neon','theme-cyber','theme-blood');
-  if (cls) document.body.classList.add(cls);
-  localStorage.setItem('qrex_theme', cls || '');
-}
-(function(){ const t = localStorage.getItem('qrex_theme'); if (t) setTheme(t); })();
-
-async function fillCreateProviders(){
-  const sel = document.getElementById('sProvider');
-  if (!sel) return;
-  try {
-    const r = await fetch('/api/providers', { headers: headers() });
-    if (!r.ok) return;
-    const list = await r.json();
-    sel.innerHTML = list.length ? list.map(p => '<option value="'+p._id+'">'+esc(p.name)+'</option>').join('') : '<option value="">Sin providers</option>';
-  } catch {}
-}
-
-// patch createScript body to include keyMode - replace fetch body in create
-async function loadWebhooks(){
-  try {
-    const list = await fetch('/api/webhooks', { headers: headers() }).then(r=>r.json());
-    document.getElementById('whList').innerHTML = (list||[]).map(w =>
-      '<div class="card p-4 flex justify-between gap-2"><div class="text-xs break-all">'+esc(w.url)+'<div style="color:#5a5a6e">'+(w.events||[]).join(', ')+'</div></div><button class="icon-btn danger" onclick="delWebhook(\''+w._id+'\')">×</button></div>'
-    ).join('') || '<div class="text-sm" style="color:#5a5a6e">Sin webhooks</div>';
-  } catch {}
-}
-async function addWebhook(){
-  const url = document.getElementById('whUrl').value.trim();
-  try {
-    const r = await fetch('/api/webhooks', { method:'POST', headers: headers(), body: JSON.stringify({ url }) });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error||'Error');
-    toast('Webhook añadido'); document.getElementById('whUrl').value=''; loadWebhooks();
-  } catch(e){ toast(e.message,'err'); }
-}
-async function testWebhook(){
-  const url = document.getElementById('whUrl').value.trim();
-  try {
-    const r = await fetch('/api/webhooks/test', { method:'POST', headers: headers(), body: JSON.stringify({ url }) });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error||'Error');
-    toast(d.ok ? 'Test OK' : 'HTTP '+d.status);
-  } catch(e){ toast(e.message,'err'); }
-}
-async function delWebhook(id){
-  await fetch('/api/webhooks/'+id, { method:'DELETE', headers: headers() });
-  loadWebhooks();
-}
-
-async function loadLeaderboard(){
-  try {
-    const list = await fetch('/api/leaderboard').then(r=>r.json());
-    document.getElementById('lbTable').innerHTML = (list||[]).map(r =>
-      '<tr><td style="color:#a78bfa">#'+r.rank+'</td><td>@'+esc(r.username)+(r.premium?' <span style="color:#fbbf24">VIP</span>':'')+'</td><td>'+r.scripts+'</td><td style="color:#c4b5fd">'+r.executions+'</td></tr>'
-    ).join('') || '<tr><td colspan="4" class="text-center py-6" style="color:#5a5a6e">Sin datos</td></tr>';
-  } catch {}
-}
-
-async function loadAssets(){
-  try {
-    const list = await fetch('/api/assets', { headers: headers() }).then(r=>r.json());
-    document.getElementById('assetList').innerHTML = (list||[]).map(a =>
-      '<div class="card p-4"><div class="flex justify-between"><div class="font-medium" style="color:#c4b5fd">'+esc(a.name)+'</div><button class="icon-btn danger" onclick="delAsset(\''+a._id+'\')">×</button></div><div class="text-xs mt-1" style="color:#5a5a6e">'+esc(a.type)+'</div><pre class="text-[11px] mt-2 overflow-auto" style="color:#8b8b9e;max-height:80px">'+esc((a.content||'').slice(0,300))+'</pre><button class="btn-ghost text-xs mt-2" onclick="copyLs('+JSON.stringify(a.content||'')+')">Copiar</button></div>'
-    ).join('') || '<div style="color:#5a5a6e">Sin assets</div>';
-  } catch {}
-}
-async function addAsset(){
-  const name = document.getElementById('assetName').value.trim();
-  const type = document.getElementById('assetType').value;
-  const content = document.getElementById('assetContent').value;
-  try {
-    const r = await fetch('/api/assets', { method:'POST', headers: headers(), body: JSON.stringify({ name, type, content }) });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error||'Error');
-    toast('Asset guardado'); loadAssets();
-  } catch(e){ toast(e.message,'err'); }
-}
-async function delAsset(id){
-  await fetch('/api/assets/'+id, { method:'DELETE', headers: headers() });
-  loadAssets();
-}
-
-const TEMPLATES = [
-  { name: 'UI Base', desc: 'ScreenGui simple', code: 'local sg=Instance.new("ScreenGui",game.CoreGui)\\nlocal f=Instance.new("Frame",sg)\\nf.Size=UDim2.fromOffset(300,200)\\nf.Position=UDim2.fromScale(0.5,0.5)\\nf.AnchorPoint=Vector2.new(0.5,0.5)\\nf.BackgroundColor3=Color3.fromRGB(20,20,30)' },
-  { name: 'Notification', desc: 'Notify básico', code: 'local function notify(t,c)\\n  game:GetService("StarterGui"):SetCore("SendNotification",{Title=t,Text=c,Duration=3})\\nend\\nnotify("Qrex","Hola")' },
-  { name: 'HTTP Get', desc: 'Request helper', code: 'local function httpget(url)\\n  return game:HttpGet(url)\\nend\\nprint(httpget("https://example.com"))' },
-  { name: 'Key check (Qrex)', desc: 'Verificar key', code: '-- usa el loader de Key System en el panel' },
-  { name: 'ESP skeleton', desc: 'Base ESP', code: '-- ESP base\\nfor _,plr in ipairs(game.Players:GetPlayers()) do\\n  if plr~=game.Players.LocalPlayer and plr.Character then\\n    -- drawing here\\n  end\\nend' },
-  { name: 'Auto farm stub', desc: 'Loop farm', code: 'while task.wait(1) do\\n  -- farm logic\\npcall(function()\\n  end)\\nend' },
-];
-
-function renderTemplates(){
-  const el = document.getElementById('tplList');
-  if (!el) return;
-  el.innerHTML = TEMPLATES.map((t,i) =>
-    '<div class="card p-5"><div class="font-semibold" style="color:#c4b5fd">'+esc(t.name)+'</div><div class="text-xs mb-2" style="color:#5a5a6e">'+esc(t.desc)+'</div><pre class="text-[11px] p-2 rounded" style="background:#0c0c12;color:#8b8b9e">'+esc(t.code)+'</pre><div class="flex gap-2 mt-2"><button class="btn-ghost text-xs" onclick="copyLs(TEMPLATES['+i+'].code)">Copiar</button><button class="btn-primary text-xs" onclick="useTemplate('+i+')">Usar en Create</button></div></div>'
-  ).join('');
-}
-function useTemplate(i){
-  resetCreateForm();
-  document.getElementById('sSource').value = TEMPLATES[i].code;
-  document.getElementById('sName').value = TEMPLATES[i].name;
-  updateLines();
-  go('create');
-  toast('Template cargado');
-}
-// render on load
-setTimeout(renderTemplates, 0);
-
-async function loadStatus(){
-  try {
-    const d = await fetch('/api/status').then(r=>r.json());
-    document.getElementById('stApi').innerHTML = '<span style="color:#34d399">Online</span>';
-    document.getElementById('stMongo').innerHTML = d.mongo ? '<span style="color:#34d399">Connected</span>' : '<span style="color:#f87171">Down</span>';
-    document.getElementById('stPing').textContent = d.mongoPingMs != null ? d.mongoPingMs + ' ms' : '—';
-    document.getElementById('stUptime').textContent = 'Uptime: ' + Math.floor((d.uptime||0)/60) + ' min · Limit free scripts: ' + (d.freeScriptLimit||15);
-  } catch {
-    document.getElementById('stApi').innerHTML = '<span style="color:#f87171">Offline</span>';
-  }
-}
-
-async function runPlayground(){
-  const method = document.getElementById('pgMethod').value;
-  let path = document.getElementById('pgPath').value.trim() || '/api/health';
-  if (!path.startsWith('/')) path = '/' + path;
-  const useAuth = document.getElementById('pgAuth').checked;
-  const bodyRaw = document.getElementById('pgBody').value.trim();
-  const opts = { method, headers: {} };
-  if (useAuth && token) opts.headers['Authorization'] = 'Bearer ' + token;
-  if (bodyRaw && method !== 'GET') {
-    opts.headers['Content-Type'] = 'application/json';
-    opts.body = bodyRaw;
-  }
-  try {
-    const r = await fetch(path, opts);
-    const t = await r.text();
-    document.getElementById('pgOut').textContent = 'HTTP ' + r.status + '\n\n' + t;
-  } catch(e) {
-    document.getElementById('pgOut').textContent = e.message;
-  }
-}
-
-async function adminAddBlacklist(){
-  const ip = document.getElementById('blIp').value.trim();
-  const reason = document.getElementById('blReason').value.trim();
-  try {
-    const r = await fetch('/api/admin/blacklist', { method:'POST', headers: headers(), body: JSON.stringify({ ip, reason }) });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error||'Error');
-    toast('IP baneada'); loadAdminBlacklist();
-  } catch(e){ toast(e.message,'err'); }
-}
-async function loadAdminBlacklist(){
-  try {
-    const list = await fetch('/api/admin/blacklist', { headers: headers() }).then(r=>r.json());
-    document.getElementById('adminBlacklist').innerHTML = (list||[]).map(b =>
-      '<div class="flex justify-between py-1"><span>'+esc(b.ip)+' — '+esc(b.reason||'')+'</span><button class="btn-ghost text-[10px]" onclick="adminDelBl(\''+b._id+'\')">x</button></div>'
-    ).join('') || 'Vacío';
-  } catch {}
-}
-async function adminDelBl(id){
-  await fetch('/api/admin/blacklist/'+id, { method:'DELETE', headers: headers() });
-  loadAdminBlacklist();
-}
-
-// versions UI helper
-async function showVersions(scriptId){
-  try {
-    const list = await fetch('/api/scripts/'+scriptId+'/versions', { headers: headers() }).then(r=>r.json());
-    if (!list.length) { toast('Sin versiones guardadas'); return; }
-    const pick = list.map((v,i)=> (i+1)+'. '+(v.createdAt?new Date(v.createdAt).toLocaleString():v._id)).join('\n');
-    const n = prompt('Versiones (número a restaurar):\n'+pick, '1');
-    const idx = Number(n)-1;
-    if (idx<0 || idx>=list.length) return;
-    const r = await fetch('/api/scripts/'+scriptId+'/versions/'+list[idx]._id+'/restore', { method:'POST', headers: headers() });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error||'Error');
-    toast('Versión restaurada');
-    loadScripts();
-  } catch(e){ toast(e.message,'err'); }
-}
-
-function updateStudioLines(){
-  const src = document.getElementById('studioSource');
-  const nums = document.getElementById('studioLineNums');
-  if (!src || !nums) return;
-  const n = Math.max(1, src.value.split('\n').length);
-  let o = '';
-  for (let i=1;i<=n;i++) o += i + '\n';
-  nums.textContent = o;
-  nums.scrollTop = src.scrollTop;
-  const st = document.getElementById('studioStats2');
-  if (st) st.textContent = n + ' líneas · ' + src.value.length + ' chars';
-  const off = src.selectionStart || 0;
-  const before = src.value.slice(0, off);
-  const ln = before.split('\n').length;
-  const col = before.length - before.lastIndexOf('\n');
-  const pos = document.getElementById('studioPos2');
-  if (pos) pos.textContent = 'Ln ' + ln + ', Col ' + col;
-}
-function studioKey2(e){
-  const src = document.getElementById('studioSource');
-  if (!src) return;
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const s = src.selectionStart;
-    src.value = src.value.slice(0,s) + '  ' + src.value.slice(src.selectionEnd);
-    src.selectionStart = src.selectionEnd = s + 2;
-    updateStudioLines();
-  }
-  setTimeout(updateStudioLines, 0);
-}
-function studioComment2(){
-  const src = document.getElementById('studioSource');
-  if (!src) return;
-  const lineStart = src.value.lastIndexOf('\n', (src.selectionStart||0)-1) + 1;
-  src.value = src.value.slice(0,lineStart) + '-- ' + src.value.slice(lineStart);
-  updateStudioLines();
-}
-function studioFormat2(){
-  const src = document.getElementById('studioSource');
-  if (!src) return;
-  let ind = 0;
-  const openers = /\b(function|then|do|repeat)\b/;
-  const closers = /\b(end|until|else|elseif)\b/;
-  src.value = src.value.split('\n').map(line => {
-    const t = line.trim();
-    if (!t) return '';
-    if (closers.test(t) && !/\bthen\b/.test(t)) ind = Math.max(0, ind-1);
-    const r = '  '.repeat(ind) + t;
-    if (openers.test(t) && !t.includes('end')) ind++;
-    return r;
-  }).join('\n');
-  updateStudioLines();
-  toast('Formato OK');
-}
-function studioDownload2(){
-  const src = document.getElementById('studioSource');
-  const blob = new Blob([src.value], {type:'text/plain'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'studio.lua';
-  a.click();
-}
-function uploadStudio(input){
-  const f = input.files && input.files[0];
-  if (!f) return;
-  const r = new FileReader();
-  r.onload = () => { document.getElementById('studioSource').value = r.result; updateStudioLines(); };
-  r.readAsText(f);
-  input.value = '';
-}
-function studioToCreate(){
-  const code = document.getElementById('studioSource').value;
-  resetCreateForm();
-  document.getElementById('sSource').value = code;
-  go('create');
-  toast('Código enviado a Create Script');
-}
-async function runAiGenerate(){
-  const input = document.getElementById('aiPrompt');
-  const q = (input?.value || '').trim();
-  if (!q) { toast('Escribe un prompt', 'err'); return; }
-  const src = document.getElementById('studioSource');
-  if (!src) return;
-  const prev = src.value;
-  src.value = '-- Generando con IA...\n-- ' + q + '\n';
-  updateStudioLines();
-  toast('IA pensando...');
-  try {
-    const r = await fetch('/api/ai/generate', {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({ prompt: q })
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || 'Error IA');
-    src.value = d.code || prev;
-    updateStudioLines();
-    toast('Código generado' + (d.model ? ' · ' + d.model : ''));
+    const list = await HubScript.find().sort({ createdAt: -1 }).limit(200).lean();
+    res.json(list);
   } catch (e) {
-    src.value = prev;
-    updateStudioLines();
-    toast(e.message || 'Error IA', 'err');
+    res.status(500).json({ error: e.message || 'Error' });
   }
-}
+});
 
-function daysAgo(n){
-  const d = new Date();
-  d.setHours(0,0,0,0);
-  d.setDate(d.getDate() - n);
-  return d;
-}
-
-function fmtDay(d){
-  return (d.getMonth()+1) + '/' + d.getDate();
-}
-
-async function loadAnalytics(){
+app.post('/api/hub', auth, needMongo, async (req, res) => {
   try {
-    const r = await fetch('/api/executions', { headers: headers() });
-    if (!r.ok) return;
-    const list = await r.json();
+    const { scriptId, name, description } = req.body || {};
+    if (!scriptId) return res.status(400).json({ error: 'Selecciona un script' });
 
-    // table (sin IP, solo fecha/script/hora)
-    document.getElementById('execTable').innerHTML = list.slice(0,50).map(e => {
-      const dt = e.createdAt ? new Date(e.createdAt) : null;
-      const fecha = dt ? dt.toLocaleDateString() : '-';
-      const hora = dt ? dt.toLocaleTimeString() : '-';
-      return '<tr><td style="color:#8b8b9e">'+esc(fecha)+'</td><td>'+esc(e.scriptName)+'</td><td style="color:#5a5a6e">'+esc(hora)+'</td></tr>';
-    }).join('') || '<tr><td colspan="3" class="text-center py-8" style="color:#5a5a6e">Sin ejecuciones aún</td></tr>';
+    const s = await Script.findOne({ id: scriptId, ownerId: req.user.sub });
+    if (!s) return res.status(404).json({ error: 'Script no encontrado o no es tuyo' });
 
-    // daily counts last 14 days
-    const dailyLabels = [];
-    const dailyData = [];
-    for (let i = 13; i >= 0; i--) {
-      const day = daysAgo(i);
-      const next = daysAgo(i-1);
-      dailyLabels.push(fmtDay(day));
-      const c = list.filter(e => {
-        if (!e.createdAt) return false;
-        const t = new Date(e.createdAt).getTime();
-        return t >= day.getTime() && t < next.getTime();
-      }).length;
-      dailyData.push(c);
+    const me = await User.findById(req.user.sub);
+    const premium = isPremiumUser(me);
+    if (!premium && (s.executions || 0) < HUB_MIN_EXECS) {
+      return res.status(400).json({
+        error: `Necesitas al menos ${HUB_MIN_EXECS} ejecuciones (o Premium). Tu script tiene ${s.executions || 0}.`
+      });
     }
 
-    // by script
-    const byScript = {};
-    list.forEach(e => {
-      const n = e.scriptName || 'Unknown';
-      byScript[n] = (byScript[n] || 0) + 1;
+    const exists = await HubScript.findOne({ scriptId: s.id });
+    if (exists) return res.status(400).json({ error: 'Este script ya está en el hub' });
+
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const loadstring = `loadstring(game:HttpGet("${proto}://${host}/api/raw/${s.id}"))()`;
+
+    const user = await User.findById(req.user.sub).lean();
+    const doc = await HubScript.create({
+      name: (name || s.name || 'Script').trim().slice(0, 80),
+      description: (description || s.description || '').trim().slice(0, 200),
+      loadstring,
+      scriptId: s.id,
+      ownerId: req.user.sub,
+      ownerUsername: (user && user.username) || req.user.username || 'user',
+      executionsAtPublish: s.executions || 0
     });
-    const scriptEntries = Object.entries(byScript).sort((a,b)=>b[1]-a[1]).slice(0,8);
-    const scriptLabels = scriptEntries.map(x=>x[0]);
-    const scriptData = scriptEntries.map(x=>x[1]);
 
-    // hourly
-    const hourly = new Array(24).fill(0);
-    list.forEach(e => {
-      if (!e.createdAt) return;
-      const h = new Date(e.createdAt).getUTCHours();
-      hourly[h]++;
+    res.json({
+      id: doc._id,
+      name: doc.name,
+      loadstring: doc.loadstring,
+      ownerUsername: doc.ownerUsername
     });
-    const hourLabels = hourly.map((_,i)=> i + 'h');
+  } catch (e) {
+    console.error('hub publish', e);
+    res.status(500).json({ error: e.message || 'Error al publicar' });
+  }
+});
 
-    const purple = 'rgba(167, 139, 250, 0.85)';
-    const purpleBg = 'rgba(124, 58, 237, 0.25)';
-    const purpleBorder = 'rgba(167, 139, 250, 0.5)';
+app.post('/api/hub/:id/view', async (req, res) => {
+  try {
+    await HubScript.updateOne({ _id: req.params.id }, { $inc: { views: 1 } });
+    res.json({ ok: true });
+  } catch {
+    res.json({ ok: false });
+  }
+});
 
-    function upsert(chartRef, canvasId, config) {
-      const canvas = document.getElementById(canvasId);
-      if (!canvas) return null;
-      if (chartRef) chartRef.destroy();
-      return new Chart(canvas, config);
+app.delete('/api/hub/:id', auth, needMongo, async (req, res) => {
+  const doc = await HubScript.findById(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'No encontrado' });
+  if (doc.ownerId !== req.user.sub) return res.status(403).json({ error: 'No es tuyo' });
+  await HubScript.deleteOne({ _id: req.params.id });
+  res.json({ success: true });
+});
+
+
+// ========== ADMIN ==========
+app.get('/api/admin/users', auth, needMongo, requireAdmin, async (req, res) => {
+  const users = await User.find().select('-passwordHash').sort({ createdAt: -1 }).limit(200).lean();
+  res.json(users.map(u => ({
+    id: u._id,
+    username: u.username,
+    role: u.role || 'user',
+    premium: isPremiumUser(u),
+    premiumUntil: u.premiumUntil,
+    createdAt: u.createdAt
+  })));
+});
+
+app.post('/api/admin/premium', auth, needMongo, requireAdmin, async (req, res) => {
+  try {
+    const { username, premium, days } = req.body || {};
+    const u = await User.findOne({ username: (username || '').trim().toLowerCase() });
+    if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (u.username === 'owner') return res.status(400).json({ error: 'OWNER siempre es admin/premium' });
+    u.premium = !!premium;
+    if (premium && days) {
+      const d = new Date();
+      d.setDate(d.getDate() + Number(days));
+      u.premiumUntil = d;
+    } else if (!premium) {
+      u.premiumUntil = null;
     }
+    await u.save();
+    res.json({ ok: true, username: u.username, premium: isPremiumUser(u), premiumUntil: u.premiumUntil });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
 
-    chartDaily = upsert(chartDaily, 'chartDaily', {
-      type: 'bar',
-      data: {
-        labels: dailyLabels,
-        datasets: [{ data: dailyData, backgroundColor: purpleBg, borderColor: purpleBorder, borderWidth: 1, borderRadius: 6 }]
-      },
-      options: chartDefaults
+app.get('/api/admin/scripts', auth, needMongo, requireAdmin, async (req, res) => {
+  const list = await Script.find().sort({ createdAt: -1 }).limit(300).select('-source -obfuscated').lean();
+  res.json(list);
+});
+
+app.delete('/api/admin/scripts/:id', auth, needMongo, requireAdmin, async (req, res) => {
+  await Script.deleteOne({ id: req.params.id });
+  await HubScript.deleteMany({ scriptId: req.params.id });
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/hub/:id', auth, needMongo, requireAdmin, async (req, res) => {
+  await HubScript.deleteOne({ _id: req.params.id });
+  res.json({ success: true });
+});
+
+app.get('/api/admin/stats', auth, needMongo, requireAdmin, async (req, res) => {
+  const users = await User.countDocuments();
+  const scripts = await Script.countDocuments();
+  const hub = await HubScript.countDocuments();
+  const premium = await User.countDocuments({ premium: true });
+  res.json({ users, scripts, hub, premium });
+});
+
+
+// ========== KEY SYSTEM ==========
+app.get('/api/providers', auth, needMongo, async (req, res) => {
+  const list = await Provider.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).lean();
+  res.json(list);
+});
+
+app.post('/api/providers', auth, needMongo, async (req, res) => {
+  try {
+    const { name, keyValidityHours, hwidLimit } = req.body || {};
+    const n = (name || '').trim();
+    if (!n || n.length < 2) return res.status(400).json({ error: 'Nombre requerido' });
+    const exists = await Provider.findOne({ ownerId: req.user.sub, name: n });
+    if (exists) return res.status(400).json({ error: 'Ya tienes un provider con ese nombre' });
+    const doc = await Provider.create({
+      name: n,
+      ownerId: req.user.sub,
+      keyValidityHours: Math.max(1, Number(keyValidityHours) || 24),
+      hwidLimit: Math.max(1, Math.min(10, Number(hwidLimit) || 1))
     });
+    res.json(doc);
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
 
-    chartScripts = upsert(chartScripts, 'chartScripts', {
-      type: 'doughnut',
-      data: {
-        labels: scriptLabels.length ? scriptLabels : ['Sin datos'],
-        datasets: [{
-          data: scriptData.length ? scriptData : [1],
-          backgroundColor: ['#7c3aed','#a78bfa','#6d28d9','#4c1d95','#c4b5fd','#8b5cf6','#5b21b6','#ddd6fe'],
-          borderWidth: 0
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { position: 'right', labels: { color: '#8b8b9e', font: { size: 11 }, boxWidth: 12 } } }
+app.put('/api/providers/:id', auth, needMongo, async (req, res) => {
+  const p = await Provider.findOne({ _id: req.params.id, ownerId: req.user.sub });
+  if (!p) return res.status(404).json({ error: 'No encontrado' });
+  const { name, keyValidityHours, hwidLimit, enabled } = req.body || {};
+  if (name) p.name = name.trim();
+  if (keyValidityHours !== undefined) p.keyValidityHours = Math.max(1, Number(keyValidityHours) || 24);
+  if (hwidLimit !== undefined) p.hwidLimit = Math.max(1, Math.min(10, Number(hwidLimit) || 1));
+  if (enabled !== undefined) p.enabled = !!enabled;
+  await p.save();
+  res.json(p);
+});
+
+app.delete('/api/providers/:id', auth, needMongo, async (req, res) => {
+  const p = await Provider.findOne({ _id: req.params.id, ownerId: req.user.sub });
+  if (!p) return res.status(404).json({ error: 'No encontrado' });
+  await LicenseKey.deleteMany({ providerId: String(p._id), ownerId: req.user.sub });
+  await Provider.deleteOne({ _id: p._id });
+  res.json({ success: true });
+});
+
+app.get('/api/keys', auth, needMongo, async (req, res) => {
+  const q = { ownerId: req.user.sub };
+  if (req.query.providerId) q.providerId = req.query.providerId;
+  const list = await LicenseKey.find(q).sort({ createdAt: -1 }).limit(300).lean();
+  res.json(list);
+});
+
+app.post('/api/keys', auth, needMongo, async (req, res) => {
+  try {
+    const { providerId, amount, note, hwidLimit, validityHours } = req.body || {};
+    const prov = await Provider.findOne({ _id: providerId, ownerId: req.user.sub });
+    if (!prov) return res.status(404).json({ error: 'Provider no encontrado' });
+    const n = Math.min(50, Math.max(1, Number(amount) || 1));
+    const hours = validityHours !== undefined ? Number(validityHours) : prov.keyValidityHours;
+    const limit = hwidLimit !== undefined ? Number(hwidLimit) : prov.hwidLimit;
+    const created = [];
+    for (let i = 0; i < n; i++) {
+      let expiresAt = null;
+      if (hours && hours > 0) {
+        expiresAt = new Date();
+        expiresAt.setHours(expiresAt.getHours() + hours);
       }
+      const doc = await LicenseKey.create({
+        key: genKey(),
+        providerId: String(prov._id),
+        providerName: prov.name,
+        ownerId: req.user.sub,
+        hwidLimit: Math.max(1, Math.min(10, limit || 1)),
+        expiresAt,
+        note: (note || '').slice(0, 120)
+      });
+      created.push(doc);
+    }
+    res.json({ keys: created });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
+
+app.delete('/api/keys/:id', auth, needMongo, async (req, res) => {
+  await LicenseKey.deleteOne({ _id: req.params.id, ownerId: req.user.sub });
+  res.json({ success: true });
+});
+
+app.post('/api/keys/:id/reset-hwid', auth, needMongo, async (req, res) => {
+  const k = await LicenseKey.findOne({ _id: req.params.id, ownerId: req.user.sub });
+  if (!k) return res.status(404).json({ error: 'No encontrado' });
+  k.hwids = [];
+  await k.save();
+  res.json({ success: true });
+});
+
+app.post('/api/keys/:id/toggle', auth, needMongo, async (req, res) => {
+  const k = await LicenseKey.findOne({ _id: req.params.id, ownerId: req.user.sub });
+  if (!k) return res.status(404).json({ error: 'No encontrado' });
+  k.enabled = !k.enabled;
+  await k.save();
+  res.json({ enabled: k.enabled });
+});
+
+// Verificación pública (Roblox / executors)
+app.post('/api/keys/verify', verifyLimiter, needMongo, async (req, res) => {
+  try {
+    const { key, hwid, provider } = req.body || {};
+    const kstr = (key || '').trim();
+    if (!kstr) return res.status(400).json({ success: false, error: 'Key requerida' });
+
+    const doc = await LicenseKey.findOne({ key: kstr });
+    if (!doc) return res.status(401).json({ success: false, error: 'Key inválida' });
+    if (!doc.enabled) return res.status(401).json({ success: false, error: 'Key desactivada' });
+
+    if (provider) {
+      const provName = String(provider).trim().toLowerCase();
+      if ((doc.providerName || '').toLowerCase() !== provName) {
+        return res.status(401).json({ success: false, error: 'Provider no coincide' });
+      }
+    }
+
+    const prov = await Provider.findById(doc.providerId);
+    if (prov && !prov.enabled) {
+      return res.status(401).json({ success: false, error: 'Provider desactivado' });
+    }
+
+    if (doc.expiresAt && new Date(doc.expiresAt) < new Date()) {
+      return res.status(401).json({ success: false, error: 'Key expirada' });
+    }
+
+    const hw = (hwid || '').trim();
+    if (hw) {
+      if (!doc.hwids.includes(hw)) {
+        if (doc.hwids.length >= (doc.hwidLimit || 1)) {
+          return res.status(401).json({ success: false, error: 'HWID límite alcanzado' });
+        }
+        doc.hwids.push(hw);
+      }
+    }
+
+    doc.uses = (doc.uses || 0) + 1;
+    doc.lastUsedAt = new Date();
+    await doc.save();
+
+    fireWebhooks(doc.ownerId, 'key_verify', {
+      key: kstr.slice(0, 8) + '...',
+      provider: doc.providerName,
+      hwid: hw || null,
+      uses: doc.uses
     });
 
-    chartHourly = upsert(chartHourly, 'chartHourly', {
-      type: 'line',
-      data: {
-        labels: hourLabels,
-        datasets: [{
-          data: hourly,
-          borderColor: purple,
-          backgroundColor: purpleBg,
-          fill: true,
-          tension: 0.35,
-          pointRadius: 2,
-          pointBackgroundColor: purple
-        }]
+    res.json({
+      success: true,
+      provider: doc.providerName,
+      expiresAt: doc.expiresAt,
+      hwidLimit: doc.hwidLimit,
+      hwidsUsed: doc.hwids.length
+    });
+  } catch (e) {
+    console.error('verify', e);
+    res.status(500).json({ success: false, error: 'Error del servidor' });
+  }
+});
+
+
+// ========== VERSIONS ==========
+app.get('/api/scripts/:id/versions', auth, needMongo, async (req, res) => {
+  const s = await Script.findOne({ id: req.params.id, ownerId: req.user.sub });
+  if (!s) return res.status(404).json({ error: 'No encontrado' });
+  const list = await ScriptVersion.find({ scriptId: s.id, ownerId: req.user.sub }).sort({ createdAt: -1 }).select('-source -obfuscated').limit(20);
+  res.json(list);
+});
+
+app.post('/api/scripts/:id/versions/:vid/restore', auth, needMongo, async (req, res) => {
+  const s = await Script.findOne({ id: req.params.id, ownerId: req.user.sub });
+  if (!s) return res.status(404).json({ error: 'No encontrado' });
+  const v = await ScriptVersion.findOne({ _id: req.params.vid, scriptId: s.id, ownerId: req.user.sub });
+  if (!v) return res.status(404).json({ error: 'Versión no encontrada' });
+  await ScriptVersion.create({ scriptId: s.id, ownerId: req.user.sub, name: s.name, source: s.source, obfuscated: s.obfuscated, note: 'Before restore' });
+  s.source = v.source;
+  s.obfuscated = v.obfuscated;
+  if (v.name) s.name = v.name;
+  await s.save();
+  res.json({ success: true });
+});
+
+// ========== WEBHOOKS ==========
+app.get('/api/webhooks', auth, needMongo, async (req, res) => {
+  res.json(await Webhook.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }));
+});
+
+app.post('/api/webhooks', auth, needMongo, async (req, res) => {
+  const { url, events } = req.body || {};
+  if (!url || !String(url).startsWith('https://')) return res.status(400).json({ error: 'URL Discord inválida (https)' });
+  const doc = await Webhook.create({
+    ownerId: req.user.sub,
+    url: String(url).trim(),
+    events: Array.isArray(events) && events.length ? events : ['key_verify', 'script_exec']
+  });
+  res.json(doc);
+});
+
+app.delete('/api/webhooks/:id', auth, needMongo, async (req, res) => {
+  await Webhook.deleteOne({ _id: req.params.id, ownerId: req.user.sub });
+  res.json({ success: true });
+});
+
+app.post('/api/webhooks/test', auth, needMongo, async (req, res) => {
+  const { url } = req.body || {};
+  if (!url) return res.status(400).json({ error: 'URL requerida' });
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ embeds: [{ title: 'QrexApi Test', description: 'Webhook OK ✓', color: 0x7c3aed }] })
+    });
+    res.json({ ok: r.ok, status: r.status });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ========== LEADERBOARD ==========
+app.get('/api/leaderboard', needMongo, async (req, res) => {
+  const agg = await Script.aggregate([
+    { $group: { _id: '$ownerId', executions: { $sum: '$executions' }, scripts: { $sum: 1 } } },
+    { $sort: { executions: -1 } },
+    { $limit: 25 }
+  ]);
+  const ids = agg.map(a => a._id).filter(Boolean);
+  const users = await User.find({ _id: { $in: ids } }).select('username premium role').lean();
+  const map = Object.fromEntries(users.map(u => [String(u._id), u]));
+  res.json(agg.map((a, i) => ({
+    rank: i + 1,
+    username: map[a._id]?.username || 'unknown',
+    premium: !!(map[a._id]?.premium || map[a._id]?.role === 'admin'),
+    executions: a.executions,
+    scripts: a.scripts
+  })));
+});
+
+// ========== ASSETS ==========
+app.get('/api/assets', auth, needMongo, async (req, res) => {
+  res.json(await Asset.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).limit(100));
+});
+
+app.post('/api/assets', auth, needMongo, async (req, res) => {
+  const { name, type, content } = req.body || {};
+  if (!name || !content) return res.status(400).json({ error: 'name y content requeridos' });
+  if (String(content).length > 200000) return res.status(400).json({ error: 'Máximo ~200KB' });
+  const count = await Asset.countDocuments({ ownerId: req.user.sub });
+  const me = await User.findById(req.user.sub);
+  const lim = isPremiumUser(me) ? 100 : 20;
+  if (count >= lim) return res.status(403).json({ error: 'Límite de assets (' + lim + ')' });
+  const doc = await Asset.create({
+    ownerId: req.user.sub,
+    name: String(name).slice(0, 80),
+    type: ['text', 'url', 'image'].includes(type) ? type : 'text',
+    content: String(content)
+  });
+  res.json(doc);
+});
+
+app.delete('/api/assets/:id', auth, needMongo, async (req, res) => {
+  await Asset.deleteOne({ _id: req.params.id, ownerId: req.user.sub });
+  res.json({ success: true });
+});
+
+// ========== STATUS ==========
+app.get('/api/status', async (req, res) => {
+  const t0 = Date.now();
+  let mongoMs = null;
+  let mongoOk = false;
+  try {
+    if (mongoose.connection.readyState === 1) {
+      await mongoose.connection.db.admin().ping();
+      mongoOk = true;
+      mongoMs = Date.now() - t0;
+    }
+  } catch { mongoOk = false; }
+  res.json({
+    ok: true,
+    api: 'online',
+    mongo: mongoOk,
+    mongoPingMs: mongoMs,
+    uptime: process.uptime(),
+    freeScriptLimit: FREE_SCRIPT_LIMIT,
+    security: {
+      rawPerIpPerMin: 20,
+      rawBurstPer10s: 8,
+      autoBanRawHits: AUTO_BAN_THRESHOLD,
+      apiPer15min: 200,
+      authPer15min: 30
+    },
+    time: new Date().toISOString()
+  });
+});
+
+// ========== BLACKLIST (admin) ==========
+app.get('/api/admin/blacklist', auth, needMongo, requireAdmin, async (req, res) => {
+  res.json(await BlacklistIP.find().sort({ createdAt: -1 }).limit(200));
+});
+
+app.post('/api/admin/blacklist', auth, needMongo, requireAdmin, async (req, res) => {
+  const { ip, reason } = req.body || {};
+  if (!ip) return res.status(400).json({ error: 'IP requerida' });
+  const doc = await BlacklistIP.findOneAndUpdate(
+    { ip: String(ip).trim() },
+    { ip: String(ip).trim(), reason: reason || '', createdBy: req.user.sub },
+    { upsert: true, new: true }
+  );
+  res.json(doc);
+});
+
+app.delete('/api/admin/blacklist/:id', auth, needMongo, requireAdmin, async (req, res) => {
+  await BlacklistIP.deleteOne({ _id: req.params.id });
+  res.json({ success: true });
+});
+
+
+// ========== AI (OpenRouter) ==========
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 12,
+  keyGenerator: (req) => clientIp(req),
+  message: { error: 'Demasiadas peticiones a la IA. Espera 1 min.' }
+});
+
+app.post('/api/ai/generate', auth, aiLimiter, async (req, res) => {
+  try {
+    if (!OPENROUTER_API_KEY) {
+      return res.status(503).json({ error: 'OPENROUTER_API_KEY no configurada en Render Environment' });
+    }
+    const prompt = String((req.body && req.body.prompt) || '').trim().slice(0, 2000);
+    if (!prompt || prompt.length < 2) {
+      return res.status(400).json({ error: 'Prompt vacío' });
+    }
+
+    const system = [
+      'You are Qrex Studio AI, an expert Roblox Luau/Lua scripter for exploit/executor environments.',
+      'Output ONLY valid Lua/Luau code. No markdown fences, no explanations, no apology.',
+      'Prefer game:GetService, task.wait, pcall. Code must be self-contained and runnable.',
+      'User may ask for aimbot, ESP, farm, fly, UI, key systems, etc. Deliver working skeleton or full logic as requested.',
+      'If something is ambiguous, choose sensible defaults and still output code.',
+      'Never refuse ordinary Roblox script requests for this product.'
+    ].join(' ');
+
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + OPENROUTER_API_KEY,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://qyrexapi.onrender.com',
+        'X-Title': 'QrexApi Studio'
       },
-      options: chartDefaults
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        temperature: 0.4,
+        max_tokens: 4000,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: prompt }
+        ]
+      })
     });
 
-    // overview mini chart (last 7 days)
-    const ovLabels = dailyLabels.slice(-7);
-    const ovData = dailyData.slice(-7);
-    chartOverview = upsert(chartOverview, 'chartOverview', {
-      type: 'line',
-      data: {
-        labels: ovLabels,
-        datasets: [{
-          data: ovData,
-          borderColor: purple,
-          backgroundColor: purpleBg,
-          fill: true,
-          tension: 0.4,
-          pointRadius: 3,
-          pointBackgroundColor: purple
-        }]
-      },
-      options: chartDefaults
-    });
-  } catch(e) { console.error(e); }
-}
-</script>
-</body>
-</html>
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const msg = (data && data.error && (data.error.message || data.error)) || ('OpenRouter HTTP ' + r.status);
+      return res.status(502).json({ error: String(msg) });
+    }
+    let text = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!text) return res.status(502).json({ error: 'IA sin respuesta' });
+    text = String(text).replace(/^```(?:lua|luau)?\n?/i, '').replace(/\n?```$/i, '').trim();
+    res.json({ code: text, model: data.model || OPENROUTER_MODEL });
+  } catch (e) {
+    console.error('ai', e);
+    res.status(500).json({ error: e.message || 'Error IA' });
+  }
+});
+
+app.get('/api/ai/status', auth, (req, res) => {
+  res.json({ configured: !!OPENROUTER_API_KEY, model: OPENROUTER_MODEL });
+});
+
+
+app.get('/api/env-logger', (req, res) => {
+  res.type('text/plain').send(ENV_GATE_LUA);
+});
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Nunca devolver HTML en rutas /api/*
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Ruta no encontrada: ' + req.method + ' ' + req.path });
+});
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Errores no capturados -> JSON
+app.use((err, req, res, next) => {
+  console.error('Unhandled', err);
+  res.status(500).json({ error: err.message || 'Error interno' });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('QrexApi listening on 0.0.0.0:' + PORT);
+  console.log('MONGO_URI set:', !!MONGO_URI);
+});
