@@ -7,5 +7,4 @@ COPY public ./public/
 ENV NODE_ENV=production
 ENV PORT=8080
 EXPOSE 8080
-USER root
 CMD ["node", "server.js"]
