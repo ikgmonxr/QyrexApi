@@ -109,9 +109,16 @@
   .empty-state svg{margin:0 auto 12px;opacity:.4}
   .chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:6px;background:#14141e;color:#8b8b9e;border:1px solid #252533}
 
+
+  #bg-overlay{position:fixed;inset:0;z-index:0;pointer-events:none;background-size:cover;background-position:center;opacity:0.22;transition:opacity .3s,background-image .4s}
+  #appView,#loginView{position:relative;z-index:1}
+  .sidebar{backdrop-filter:blur(12px);background:rgba(12,12,18,.85)!important}
+  .card{backdrop-filter:blur(8px)}
+  .nav-section{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#5a5a6e;padding:16px 16px 6px;font-weight:600}
 </style>
 </head>
 <body>
+<div id="bg-overlay"></div>
 
 <!-- LOGIN -->
 <div class="toast-wrap" id="toasts"></div>
@@ -145,102 +152,109 @@
       </div>
       <nav class="flex-1 overflow-y-auto pb-4">
         <div class="nav-section">General</div>
-        <button class="nav-item active" data-page="overview" onclick="go('overview')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1h-2z"/></svg>
+        <button class="nav-item" data-page="overview" onclick="go('overview')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
           Overview
-        </button>
-        <div class="nav-section">Scripts</div>
-        <button class="nav-item" data-page="scripts" onclick="go('scripts')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-          Lua Scripts
-        </button>
-        <button class="nav-item" data-page="hub" onclick="go('hub')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-          Script Hub
-        </button>
-        <button class="nav-item" data-page="keys" onclick="go('keys')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
-          Key System
-        </button>
-        <button class="nav-item" data-page="webhooks" onclick="go('webhooks')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-          Webhooks
-        </button>
-        <button class="nav-item" data-page="leaderboard" onclick="go('leaderboard')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-          Leaderboard
-        </button>
-        <button class="nav-item" data-page="assets" onclick="go('assets')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
-          My Assets
-        </button>
-        <button class="nav-item" data-page="templates" onclick="go('templates')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"/></svg>
-          Templates
         </button>
         <button class="nav-item" data-page="status" onclick="go('status')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           System Status
         </button>
-        <button class="nav-item" data-page="playground" onclick="go('playground')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-          API Playground
-        </button>
         <button class="nav-item" data-page="changelog" onclick="go('changelog')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/></svg>
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           Changelog
+        </button>
+
+        <div class="nav-section">Scripts</div>
+        <button class="nav-item" data-page="scripts" onclick="go('scripts')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Lua Scripts
         </button>
         <button class="nav-item" data-page="create" onclick="if(!editingId)resetCreateForm();go('create')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
           Create Script
         </button>
         <button class="nav-item" data-page="studio" onclick="go('studio')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
           Studio
         </button>
+        <button class="nav-item" data-page="hub" onclick="go('hub')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          Script Hub
+        </button>
+        <button class="nav-item" data-page="templates" onclick="go('templates')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/></svg>
+          Templates
+        </button>
         <button class="nav-item" data-page="cloudui" onclick="go('cloudui')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
           Cloud UI
         </button>
-        <button class="nav-item" data-page="alerts" onclick="go('alerts')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-          Remote Alerts
+
+        <div class="nav-section">Key System</div>
+        <button class="nav-item" data-page="keys" onclick="go('keys')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+          Keys & Providers
         </button>
         <button class="nav-item" data-page="promos" onclick="go('promos')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
-          Promos
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/></svg>
+          Promos / Get-Key
+        </button>
+
+        <div class="nav-section">Developer</div>
+        <button class="nav-item" data-page="executions" onclick="go('executions')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          Analytics
         </button>
         <button class="nav-item" data-page="telemetry" onclick="go('telemetry')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
           Live Telemetry
         </button>
-        <button class="nav-item" data-page="bugs" onclick="go('bugs')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-          Bug Reports
+        <button class="nav-item" data-page="webhooks" onclick="go('webhooks')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a5 5 0 010-7.072m0 0L6.343 7.05m2.828 2.829A3 3 0 019 12"/></svg>
+          Webhooks
+        </button>
+        <button class="nav-item" data-page="playground" onclick="go('playground')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          API Playground
         </button>
         <button class="nav-item" data-page="routes" onclick="go('routes')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
           Dynamic Routes
         </button>
-        <button class="nav-item" data-page="security" onclick="go('security')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-          Anti-Pirate
-        </button>
-
-        <button class="nav-item" data-page="executions" onclick="go('executions')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-          Analytics
-        </button>
-        <div class="nav-section">Developer</div>
         <button class="nav-item" data-page="apiinfo" onclick="go('apiinfo')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           API Info
         </button>
+        <button class="nav-item" data-page="assets" onclick="go('assets')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
+          My Assets
+        </button>
+
+        <div class="nav-section">Moderation</div>
+        <button class="nav-item" data-page="alerts" onclick="go('alerts')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+          Remote Alerts
+        </button>
+        <button class="nav-item" data-page="bugs" onclick="go('bugs')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          Bug Reports
+        </button>
+        <button class="nav-item" data-page="security" onclick="go('security')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          Anti-Pirate
+        </button>
+        <button class="nav-item" data-page="leaderboard" onclick="go('leaderboard')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
+          Leaderboard
+        </button>
+
         <div class="nav-section admin-only" style="display:none">Admin</div>
         <button class="nav-item admin-only" style="display:none" data-page="admin" onclick="go('admin')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
           Admin Panel
         </button>
+
         <div class="nav-section">Account</div>
         <button class="nav-item" data-page="settings" onclick="go('settings')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
@@ -460,11 +474,12 @@
               </div>
               <div>
                 <label class="field">Protección del código</label>
-                <select id="sObfMode">
-                  <option value="qrex">QyrexObf (online)</option>
-                  <option value="local">Local 5× XOR + Base64</option>
+                <select id="sObfMode" onchange="onObfModeChange()">
+                  <option value="local" selected>Local 5× XOR + Base64 (recomendado)</option>
+                  <option value="qrex">QyrexObf (online) — En beta, probablemente no funcione</option>
                   <option value="none">Sin ofuscar (anti-tamper HTTP)</option>
                 </select>
+                <div id="obfWarn" class="text-xs mt-2 hidden" style="color:#fbbf24;background:#1a1810;border:1px solid #3d3418;padding:8px 10px;border-radius:8px">⚠ QyrexObf está en beta: puede crashear al ejecutar el script. Usa Local 5× XOR si necesitas estabilidad.</div>
               </div>
               <div class="text-xs" style="color:#5a5a6e">Gratis: máx 15 scripts · VIP: ilimitados</div>
 
@@ -870,6 +885,22 @@ local Players = game:GetService(&quot;Players&quot;)
                 <div class="text-xs mt-1 mb-3" style="color:#8b8b9e">Publica en el Hub sin 500 runs, badge dorado y más prioridad.</div>
                 <div class="text-xs" style="color:#5a5a6e">Contacta a <b style="color:#a78bfa">OWNER</b> para activar Premium en tu cuenta.</div>
               </div>
+              
+            <div class="card p-6">
+              <div class="text-sm font-semibold mb-1">Fondo del panel</div>
+              <div class="text-xs mb-3" style="color:#5a5a6e">Imagen de fondo + opacidad</div>
+              <div class="flex flex-wrap gap-2 mb-3" id="bgPresets"></div>
+              <input id="bgCustom" placeholder="URL de imagen (https://...)" class="mb-2"/>
+              <div class="flex gap-2 items-center mb-2">
+                <span class="text-xs" style="color:#8b8b9e">Opacidad</span>
+                <input type="range" id="bgOpacity" min="0" max="50" value="22" style="width:140px;accent-color:#7c3aed" oninput="setBgOpacity(this.value)"/>
+              </div>
+              <div class="flex gap-2">
+                <button class="btn-primary text-sm" onclick="applyCustomBg()">Aplicar URL</button>
+                <button class="btn-ghost text-sm" onclick="clearBg()">Quitar fondo</button>
+              </div>
+            </div>
+
               <button onclick="logout()" class="btn-ghost mt-4" style="color:#f87171;border-color:#3a1a1a">Cerrar sesión</button>
             </div>
             <div class="card p-6">
@@ -1336,7 +1367,7 @@ function resetCreateForm(){
   document.getElementById('createSubtitle').textContent = 'Create or modify Lua script';
   document.getElementById('createBtnLabel').textContent = 'Create';
   document.getElementById('createOutWrap').classList.add('hidden');
-  const om2 = document.getElementById('sObfMode'); if (om2) om2.value = 'qrex';
+  const om2 = document.getElementById('sObfMode'); if (om2) om2.value = 'local';
   updateLines();
 }
 
@@ -1357,7 +1388,7 @@ async function createScript(){
     if (editId) {
       r = await fetch('/api/scripts/' + editId, {
         method: 'PUT', headers: headers(),
-        body: JSON.stringify({ name, description, source, obfMode: (document.getElementById('sObfMode')||{}).value || 'qrex', keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
+        body: JSON.stringify({ name, description, source, obfMode: (document.getElementById('sObfMode')||{}).value || 'local', keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
       });
       d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Error al guardar');
@@ -1373,7 +1404,7 @@ async function createScript(){
     } else {
       r = await fetch('/api/scripts', {
         method:'POST', headers: headers(),
-        body: JSON.stringify({ name, description, source, obfMode: (document.getElementById('sObfMode')||{}).value || 'qrex', keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
+        body: JSON.stringify({ name, description, source, obfMode: (document.getElementById('sObfMode')||{}).value || 'local', keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
       });
       d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Error');
@@ -2235,6 +2266,65 @@ local res = request({ Url = "${location.origin}/api/security/env-check", Method 
 local data = HttpService:JSONDecode(res.Body)
 if data.blocked then return warn("Blocked environment") end
 `;
+})();
+
+
+function onObfModeChange(){
+  const v = document.getElementById('sObfMode')?.value;
+  const w = document.getElementById('obfWarn');
+  if (w) w.classList.toggle('hidden', v !== 'qrex');
+}
+
+const BG_PRESETS = [
+  { name: 'Aurora', url: 'https://images.unsplash.com/photo-1534796636912-3b95b3ab5988?w=1600&q=80' },
+  { name: 'Neon city', url: 'https://images.unsplash.com/photo-1519608521222-e142cfa63c4c?w=1600&q=80' },
+  { name: 'Purple haze', url: 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=1600&q=80' },
+  { name: 'Matrix dark', url: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=1600&q=80' },
+  { name: 'Cyber grid', url: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1600&q=80' },
+  { name: 'Abstract', url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1600&q=80' },
+];
+
+function applyBg(url, opacity){
+  const el = document.getElementById('bg-overlay');
+  if (!el) return;
+  if (!url) { el.style.backgroundImage = 'none'; localStorage.removeItem('qrex_bg'); return; }
+  el.style.backgroundImage = 'url("'+url+'")';
+  const op = opacity != null ? opacity : (localStorage.getItem('qrex_bg_op') || 22);
+  el.style.opacity = String(Number(op)/100);
+  localStorage.setItem('qrex_bg', url);
+  localStorage.setItem('qrex_bg_op', String(op));
+}
+function setBgOpacity(v){
+  const el = document.getElementById('bg-overlay');
+  if (el) el.style.opacity = String(Number(v)/100);
+  localStorage.setItem('qrex_bg_op', String(v));
+}
+function applyCustomBg(){
+  const url = document.getElementById('bgCustom')?.value?.trim();
+  if (!url || !/^https?:\/\//i.test(url)) { toast('URL https inválida', 'err'); return; }
+  applyBg(url, document.getElementById('bgOpacity')?.value);
+  toast('Fondo aplicado');
+}
+function clearBg(){
+  applyBg('');
+  toast('Fondo quitado');
+}
+(function initBg(){
+  const url = localStorage.getItem('qrex_bg');
+  const op = localStorage.getItem('qrex_bg_op') || 22;
+  if (url) applyBg(url, op);
+  const box = document.getElementById('bgPresets');
+  if (box) {
+    BG_PRESETS.forEach(p => {
+      const b = document.createElement('button');
+      b.className = 'btn-ghost text-xs';
+      b.textContent = p.name;
+      b.onclick = () => applyBg(p.url, document.getElementById('bgOpacity')?.value || 22);
+      box.appendChild(b);
+    });
+  }
+  const range = document.getElementById('bgOpacity');
+  if (range) range.value = op;
 })();
 
 function daysAgo(n){
