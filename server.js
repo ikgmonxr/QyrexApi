@@ -433,14 +433,12 @@ function needMongo(req, res, next) {
 }
 
 function requireAdmin(req, res, next) {
-  // JWT may not include role; check username OWNER or load user
   const name = (req.user && req.user.username || '').toLowerCase();
   if (name === 'owner') return next();
-  // async check against DB / memory
   (async () => {
     try {
       let role = '';
-      if (useMemory || !mongoReady) {
+      if (typeof useMemory !== 'undefined' && useMemory) {
         const u = memDB.users.find(x => String(x._id) === String(req.user.sub));
         role = (u && u.role) || '';
         if (u && u.username === 'owner') role = 'admin';
