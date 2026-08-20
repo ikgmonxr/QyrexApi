@@ -432,6 +432,32 @@ function needMongo(req, res, next) {
   next();
 }
 
+function requireAdmin(req, res, next) {
+  // JWT may not include role; check username OWNER or load user
+  const name = (req.user && req.user.username || '').toLowerCase();
+  if (name === 'owner') return next();
+  // async check against DB / memory
+  (async () => {
+    try {
+      let role = '';
+      if (useMemory || !mongoReady) {
+        const u = memDB.users.find(x => String(x._id) === String(req.user.sub));
+        role = (u && u.role) || '';
+        if (u && u.username === 'owner') role = 'admin';
+      } else {
+        const u = await User.findById(req.user.sub).select('role username');
+        role = (u && u.role) || '';
+        if (u && u.username === 'owner') role = 'admin';
+      }
+      if (role === 'admin') return next();
+      return res.status(403).json({ error: 'Solo admin' });
+    } catch (e) {
+      return res.status(403).json({ error: 'Solo admin' });
+    }
+  })();
+}
+
+
 async function obfuscateWithQyrex(code) {
   const r = await fetch(OBFUSCATOR_URL, {
     method: 'POST',
