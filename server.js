@@ -640,7 +640,7 @@ app.post('/api/scripts', auth, needMongo, async (req, res) => {
       const wantObf = req.body?.doObfuscate !== false && req.body?.doObfuscate !== 'false';
       obfMode = wantObf ? 'qrex' : 'none';
     }
-    if (!['none', 'qrex', 'local'].includes(obfMode)) obfMode = 'qrex';
+    if (!['none', 'qrex', 'local'].includes(obfMode)) obfMode = 'local';
     const resolved = await resolveObfuscated(source, obfMode);
     const doc = await Script.create({
       ownerId: req.user.sub,
@@ -1698,7 +1698,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || 'Error interno' });
 });
 
-app.listen(PORT, () => {
-  console.log('QrexApi listening on port', PORT);
-  console.log('MONGO_URI set:', !!MONGO_URI);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('QrexApi listening on 0.0.0.0:' + PORT);
 });
