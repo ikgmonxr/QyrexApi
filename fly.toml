@@ -1,5 +1,5 @@
 app = "qyrexapi"
-primary_region = "ams"
+primary_region = "dfw"
 
 [build]
   dockerfile = "Dockerfile"
@@ -22,10 +22,6 @@ primary_region = "ams"
     grace_period = "120s"
     method = "GET"
     path = "/api/health"
-
-[restart]
-  policy = "on-failure"
-  retries = 10
 
 [[vm]]
   memory = "512mb"
