@@ -116,7 +116,7 @@
       <img src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="Qrex" class="w-10 h-10 rounded-xl object-cover"/>
       <span class="text-2xl font-bold tracking-tight">QrexApi</span>
     </div>
-    <p class="text-center text-sm mb-8" style="color:#6b6b80">Scripts · Ofuscación · Dashboard</p>
+    <p class="text-center text-sm mb-8" style="color:#6b6b80">Scripts protegidos · Keys · Dashboard</p>
     <div class="flex gap-2 mb-6 p-1 rounded-xl" style="background:#0c0c12">
       <button id="tabLogin" onclick="setTab('login')" class="flex-1 py-2.5 rounded-lg text-sm font-semibold" style="background:#7c3aed;color:#fff">Entrar</button>
       <button id="tabReg" onclick="setTab('register')" class="flex-1 py-2.5 rounded-lg text-sm font-semibold" style="background:transparent;color:#6b6b80">Registrarse</button>
@@ -125,7 +125,7 @@
       <input id="authUser" type="text" placeholder="Usuario" autocomplete="username"/>
       <input id="authPass" type="password" placeholder="Contraseña" autocomplete="current-password"/>
       <button id="authBtn" onclick="doAuth()" class="btn-primary w-full mt-2">Entrar</button>
-      <p id="loginErr" class="text-red-400 text-sm text-center hidden mt-2"></p>
+            <p id="loginErr" class="text-red-400 text-sm text-center hidden mt-2"></p>
     </div>
   </div>
 </div>
@@ -429,7 +429,7 @@
                 <select id="sObfMode">
                   <option value="qrex">QyrexObf (online)</option>
                   <option value="local">Código plano</option>
-                  <option value="none">Sin ofuscar (anti-tamper HTTP)</option>
+                  <option value="none">Solo EnvLogger (sin XOR)</option>
                 </select>
               </div>
               <div class="text-xs" style="color:#5a5a6e">Gratis: máx 15 scripts · VIP: ilimitados</div>
@@ -791,6 +791,8 @@ local Players = game:GetService(&quot;Players&quot;)
 </div>
 
 <script>
+
+
 let token = localStorage.getItem('qrex_token') || '';
 let currentUser = null;
 let mode = 'login';
