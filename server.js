@@ -375,20 +375,19 @@ function wrapWithEnvLogger(source) {
 }
 
 async function resolveObfuscated(source, mode) {
-  // mode: 'voltils' (default) | 'none'
-  // Siempre env logger delante. Si Voltils falla → env only (no crash).
-  const protected = wrapWithEnvLogger(source);
-  const m = (mode || 'voltils').toString().toLowerCase();
-  if (m === 'none') {
-    return { code: protected, doObfuscate: false, obfMode: 'none' };
-  }
+  // Ofuscación obligatoria vía API interna. Branding QyrexObf. Sin env logger.
+  const src = String(source || '');
   try {
-    const code = await obfuscateWithVoltils(protected);
-    return { code, doObfuscate: true, obfMode: 'voltils' };
+    let code = await obfuscateWithVoltils(src);
+    code = String(code || '');
+    if (!code.trim().startsWith('-- Protect by QyrexObf')) {
+      code = '-- Protect by QyrexObf\n' + code;
+    }
+    return { code, doObfuscate: true, obfMode: 'qrex' };
   } catch (e) {
-    console.error('Voltils fail:', e.message);
-    // fallback: env logger only, never crash create
-    return { code: protected, doObfuscate: false, obfMode: 'none', warning: 'Voltils falló: ' + e.message };
+    console.error('Obfuscator fail:', e.message);
+    // Re-lanzar para que el create muestre error (no guardar sin ofuscar)
+    throw new Error('Ofuscación falló: ' + (e.message || 'error'));
   }
 }
 
@@ -672,12 +671,12 @@ app.put('/api/scripts/:id', auth, needMongo, async (req, res) => {
     }
     if (source) {
       s.source = source;
-      const resolved = await resolveObfuscated(source, s.obfMode || (s.doObfuscate ? 'voltils' : 'none'));
+      const resolved = await resolveObfuscated(source, 'qrex');
       s.obfuscated = resolved.code;
       s.doObfuscate = resolved.doObfuscate;
       s.obfMode = resolved.obfMode;
     } else if ((req.body?.obfMode || req.body?.doObfuscate !== undefined) && s.source) {
-      const resolved = await resolveObfuscated(s.source, s.obfMode || 'voltils');
+      const resolved = await resolveObfuscated(s.source, 'qrex');
       s.obfuscated = resolved.code;
       s.doObfuscate = resolved.doObfuscate;
       s.obfMode = resolved.obfMode;
