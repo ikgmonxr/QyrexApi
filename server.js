@@ -10,12 +10,12 @@ const path = require('path');
 const app = express();
 app.set('trust proxy', 1);
 
-const JWT_SECRET = process.env.JWT_SECRET || 'cambia-este-secret-por-uno-largo';
-const MONGO_URI = process.env.MONGO_URI || '';
+const JWT_SECRET = process.env.JWT_SECRET || '63fd9d9f11c6d8f7d0f30dfb217e044357e28e0ffe86c6b060bf12f4f67b731a0ae4dc9c145aa5696488f15ef6531a71';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://yarishdz2_db_user:7cp3VZH9aXK77wXa@ikgmxer.8tj7kfa.mongodb.net/hubsilent?appName=ikgmxer';
 const OBFUSCATOR_URL = process.env.OBFUSCATOR_URL || 'https://qyrexobf.onrender.com/api/obfuscate';
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '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';
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/auto';
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 app.use(helmet({
   contentSecurityPolicy: false,
@@ -114,7 +114,7 @@ let mongoReady = false;
 
 async function connectMongo() {
   if (!MONGO_URI) {
-    console.error('FATAL: MONGO_URI no esta configurado en Environment Variables');
+    console.error('FATAL: MONGO_URI no configurado');
     return;
   }
   try {
@@ -400,7 +400,7 @@ function auth(req, res, next) {
 
 function needMongo(req, res, next) {
   if (!MONGO_URI) {
-    return res.status(503).json({ error: 'MONGO_URI no configurado en Render Environment' });
+    return res.status(503).json({ error: 'MONGO_URI no configurado' });
   }
   if (!mongoReady && mongoose.connection.readyState !== 1) {
     return res.status(503).json({ error: 'MongoDB no conectado. Revisa MONGO_URI y Network Access en Atlas (0.0.0.0/0)' });
@@ -535,7 +535,7 @@ app.post('/api/auth/register', needMongo, async (req, res) => {
     if (e.code === 11000) {
       return res.status(400).json({ error: 'Ese usuario ya existe' });
     }
-    res.status(500).json({ error: 'Error al registrar: ' + (e.message || 'desconocido') });
+    res.status(500).json({ error: 'Error al registrar: ' + (e.message || 'desconocido') + (mongoReady ? '' : ' (Mongo offline)') });
   }
 });
 
@@ -572,7 +572,7 @@ app.post('/api/auth/login', needMongo, async (req, res) => {
     });
   } catch (e) {
     console.error('login', e);
-    res.status(500).json({ error: 'Error al iniciar sesion: ' + (e.message || 'desconocido') });
+    res.status(500).json({ error: 'Error al iniciar sesion: ' + (e.message || 'desconocido') + (mongoReady ? '' : ' (Mongo offline)') });
   }
 });
 
@@ -1322,7 +1322,7 @@ const aiLimiter = rateLimit({
 app.post('/api/ai/generate', auth, aiLimiter, async (req, res) => {
   try {
     if (!OPENROUTER_API_KEY) {
-      return res.status(503).json({ error: 'OPENROUTER_API_KEY no configurada en Render Environment' });
+      return res.status(503).json({ error: 'OPENROUTER_API_KEY no configurada en Environment' });
     }
     const prompt = String((req.body && req.body.prompt) || '').trim().slice(0, 2000);
     if (!prompt || prompt.length < 2) {
