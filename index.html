@@ -1,0 +1,2375 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>QrexApi</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{font-family:Inter,system-ui,sans-serif;background:var(--bg,#0a0a0f);color:var(--text,#e4e4ed);margin:0}
+  :root{--bg:#0a0a0f;--card:#111118;--accent:#7c3aed;--accent2:#a78bfa;--border:#1e1e2a}
+  body.theme-neon{--bg:#050510;--card:#0a0a18;--accent:#00ff9d;--accent2:#00d4ff;--border:#1a2a22}
+  body.theme-cyber{--bg:#0a0014;--card:#12001f;--accent:#ff00aa;--accent2:#00f0ff;--border:#2a1040}
+  body.theme-blood{--bg:#0f0505;--card:#1a0a0a;--accent:#dc2626;--accent2:#f87171;--border:#2a1515}
+  body.theme-matrix{--bg:#020b05;--card:#041a0c;--accent:#22c55e;--accent2:#4ade80;--border:#0f3d1f}
+  body.theme-neonblue{--bg:#050a14;--card:#0a1224;--accent:#3b82f6;--accent2:#60a5fa;--border:#1e3a5f}
+  body.theme-neon .btn-primary, body.theme-matrix .btn-primary, body.theme-cyber .btn-primary, body.theme-neonblue .btn-primary{
+    box-shadow:0 0 20px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  .btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent))!important}
+  .card{background:var(--card)!important;border-color:var(--border)!important}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  @keyframes scaleIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+  @keyframes slideRight{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:none}}
+  @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  @keyframes glowPulse{0%,100%{box-shadow:0 0 0 0 rgba(124,58,237,.0)}50%{box-shadow:0 0 24px 0 rgba(124,58,237,.15)}}
+  .page{animation:fadeUp .4s cubic-bezier(.22,1,.36,1) both}
+  .card{transition:border-color .2s,box-shadow .25s,transform .25s}
+  .card:hover{border-color:#2a2a3d}
+  .nav-item{transition:all .2s cubic-bezier(.22,1,.36,1)}
+  .btn-primary{transition:opacity .2s,transform .2s,box-shadow .2s}
+  .btn-primary:hover{opacity:.92;transform:translateY(-1px);box-shadow:0 8px 24px rgba(124,58,237,.35)}
+  .btn-ghost{transition:all .2s}
+  .stat-val{animation:fadeUp .5s .1s both}
+  #loginView .card{animation:scaleIn .5s cubic-bezier(.22,1,.36,1) both}
+  .sidebar{animation:slideRight .4s cubic-bezier(.22,1,.36,1) both}
+  #scriptsList .card{animation:fadeUp .35s both}
+  #scriptsList .card:nth-child(1){animation-delay:.05s}
+  #scriptsList .card:nth-child(2){animation-delay:.1s}
+  #scriptsList .card:nth-child(3){animation-delay:.15s}
+  #scriptsList .card:nth-child(4){animation-delay:.2s}
+  #scriptsList .card:nth-child(5){animation-delay:.25s}
+  input,textarea,select{transition:border-color .2s,box-shadow .2s}
+  input:focus,textarea:focus,select:focus{box-shadow:0 0 0 3px rgba(124,58,237,.15)}
+  .user-pill{transition:border-color .2s}
+  .user-pill:hover{border-color:#2a2a3d}
+  .badge{transition:transform .2s}
+  .editor-wrap{transition:border-color .2s}
+  .editor-wrap:focus-within{border-color:#7c3aed}
+
+  .sidebar{background:#0d0d14;border-right:1px solid #1a1a24;width:260px}
+  .nav-section{font-size:10px;letter-spacing:.08em;color:#5a5a6e;font-weight:600;padding:16px 16px 6px;text-transform:uppercase}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 14px;margin:1px 8px;border-radius:8px;color:#8b8b9e;font-size:13.5px;font-weight:500;cursor:pointer;transition:all .15s;border:none;background:transparent;width:calc(100% - 16px);text-align:left}
+  .nav-item:hover{background:#16161f;color:#c4b5fd}
+  .nav-item.active{background:#1a1428;color:#a78bfa}
+  .nav-item svg{width:18px;height:18px;flex-shrink:0;opacity:.7}
+  .nav-item.active svg{opacity:1}
+  .card{background:#111118;border:1px solid #1e1e2a;border-radius:14px}
+  input,textarea,select{background:#0c0c12;border:1px solid #252533;color:#e4e4ed;border-radius:10px;padding:11px 14px;font-size:14px;width:100%;outline:none;transition:border .15s}
+  input:focus,textarea:focus,select:focus{border-color:#7c3aed}
+  .btn-primary{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:10px;padding:11px 20px;font-weight:600;font-size:14px;cursor:pointer;transition:opacity .15s}
+  .btn-primary:hover{opacity:.9}
+  .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+  .btn-ghost{background:transparent;border:1px solid #2a2a3a;color:#a0a0b0;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer}
+  .btn-ghost:hover{border-color:#7c3aed;color:#c4b5fd}
+  .stat-val{font-size:32px;font-weight:700;line-height:1.2}
+  .badge{background:#1a1428;color:#a78bfa;font-size:11px;padding:3px 8px;border-radius:6px;font-weight:500}
+  .badge-green{background:#0d1f14;color:#34d399;border:1px solid #1a3a28}
+  .user-pill{display:flex;align-items:center;gap:10px;padding:12px 14px;margin:8px;border-radius:10px;background:#111118;border:1px solid #1e1e2a}
+  .avatar{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#7c3aed,#4c1d95);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff}
+  .tab-bar{display:flex;gap:0;border:1px solid #252533;border-radius:10px;overflow:hidden;background:#0c0c12}
+  .tab-bar button{flex:1;padding:10px;font-size:13px;font-weight:600;border:none;background:transparent;color:#6b6b80;cursor:pointer}
+  .tab-bar button.active{background:#1a1428;color:#a78bfa}
+  .hint-green{background:#0d1f14;border:1px solid #1a3a28;color:#34d399;border-radius:10px;padding:10px 14px;font-size:12px}
+  .editor-wrap{border:1px solid #252533;border-radius:12px;overflow:hidden;background:#0c0c12;display:flex;flex-direction:column}
+  .editor-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #1e1e2a;flex-wrap:wrap;gap:8px}
+  .editor-body{display:flex;flex:1;min-height:320px;max-height:520px;overflow:hidden;position:relative}
+  .line-nums{color:#4a4a5a;font-family:ui-monospace,Consolas,monospace;font-size:13px;padding:12px 10px 12px 12px;user-select:none;text-align:right;line-height:1.55;min-width:48px;width:48px;flex-shrink:0;overflow:hidden;background:#0a0a10;border-right:1px solid #1a1a24;white-space:pre;box-sizing:border-box}
+  #sSource{border:none;border-radius:0;background:#0c0c12;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.55;resize:none;padding:12px 14px;flex:1;min-width:0;overflow:auto;white-space:pre;tab-size:2;color:#e4e4ed}
+  .studio-toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .studio-toolbar .btn-ghost{padding:5px 10px;font-size:11px}
+  .ai-panel{border-top:1px solid #1e1e2a;background:#0a0a10;padding:10px 12px;max-height:140px;overflow:auto}
+  .ai-chip{display:inline-block;margin:3px;padding:5px 10px;border-radius:8px;border:1px solid #2a2a3a;background:#12121a;color:#c4b5fd;font-size:11px;cursor:pointer;transition:all .15s}
+  .ai-chip:hover{border-color:#7c3aed;background:#1a1428}
+  .studio-status{font-size:11px;color:#5a5a6e;padding:6px 12px;border-top:1px solid #1a1a24;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+  label.field{font-size:12px;font-weight:500;color:#8b8b9e;margin-bottom:6px;display:block}
+  label.field .req{color:#f87171}
+  ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#2a2a3a;border-radius:3px}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;padding:12px 16px;font-size:12px;color:#5a5a6e;font-weight:600;border-bottom:1px solid #1e1e2a}
+  td{padding:12px 16px;font-size:13px;border-bottom:1px solid #15151e}
+
+  .toast-wrap{position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+  .toast{pointer-events:auto;background:#16161f;border:1px solid #2a2a3a;color:#e4e4ed;padding:12px 16px;border-radius:12px;font-size:13px;box-shadow:0 12px 40px rgba(0,0,0,.45);animation:fadeUp .3s both;min-width:220px;display:flex;align-items:center;gap:10px}
+  .toast.ok{border-color:rgba(52,211,153,.35)}
+  .toast.err{border-color:rgba(248,113,113,.35)}
+  .toast .t-icon{font-size:16px}
+  .search-box{position:relative;max-width:280px}
+  .search-box input{padding-left:36px}
+  .search-box svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#5a5a6e;width:16px;height:16px;pointer-events:none}
+  .script-actions{display:flex;flex-wrap:wrap;gap:8px}
+  .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;border:1px solid #2a2a3a;background:transparent;color:#a0a0b0;cursor:pointer;transition:all .2s}
+  .icon-btn:hover{border-color:#7c3aed;color:#c4b5fd;background:#1a1428}
+  .icon-btn.danger:hover{border-color:#f87171;color:#f87171;background:#1a1010}
+  .empty-state{text-align:center;padding:48px 24px;color:#5a5a6e}
+  .empty-state svg{margin:0 auto 12px;opacity:.4}
+  .chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:6px;background:#14141e;color:#8b8b9e;border:1px solid #252533}
+
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="toast-wrap" id="toasts"></div>
+<div id="loginView" class="min-h-screen flex items-center justify-center p-6">
+  <div class="card p-10 w-full max-w-md">
+    <div class="flex items-center justify-center gap-3 mb-2">
+      <img src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="Qrex" class="w-10 h-10 rounded-xl object-cover"/>
+      <span class="text-2xl font-bold tracking-tight">QrexApi</span>
+    </div>
+    <p class="text-center text-sm mb-8" style="color:#6b6b80">Scripts · Ofuscación · Dashboard</p>
+    <div class="flex gap-2 mb-6 p-1 rounded-xl" style="background:#0c0c12">
+      <button id="tabLogin" onclick="setTab('login')" class="flex-1 py-2.5 rounded-lg text-sm font-semibold" style="background:#7c3aed;color:#fff">Entrar</button>
+      <button id="tabReg" onclick="setTab('register')" class="flex-1 py-2.5 rounded-lg text-sm font-semibold" style="background:transparent;color:#6b6b80">Registrarse</button>
+    </div>
+    <div class="space-y-3">
+      <input id="authUser" type="text" placeholder="Usuario" autocomplete="username"/>
+      <input id="authPass" type="password" placeholder="Contraseña" autocomplete="current-password"/>
+      <button id="authBtn" onclick="doAuth()" class="btn-primary w-full mt-2">Entrar</button>
+      <p id="loginErr" class="text-red-400 text-sm text-center hidden mt-2"></p>
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appView" style="display:none;min-height:100vh">
+  <div class="flex" style="min-height:100vh">
+    <aside class="sidebar flex flex-col fixed h-full z-20">
+      <div class="flex items-center gap-3 px-5 py-5">
+        <img src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="Qrex" class="w-9 h-9 rounded-xl object-cover"/>
+        <span class="font-bold text-lg tracking-tight">QrexApi</span>
+      </div>
+      <nav class="flex-1 overflow-y-auto pb-4">
+        <div class="nav-section">General</div>
+        <button class="nav-item active" data-page="overview" onclick="go('overview')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1h-2z"/></svg>
+          Overview
+        </button>
+        <div class="nav-section">Scripts</div>
+        <button class="nav-item" data-page="scripts" onclick="go('scripts')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          Lua Scripts
+        </button>
+        <button class="nav-item" data-page="hub" onclick="go('hub')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+          Script Hub
+        </button>
+        <button class="nav-item" data-page="keys" onclick="go('keys')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+          Key System
+        </button>
+        <button class="nav-item" data-page="webhooks" onclick="go('webhooks')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Webhooks
+        </button>
+        <button class="nav-item" data-page="leaderboard" onclick="go('leaderboard')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          Leaderboard
+        </button>
+        <button class="nav-item" data-page="assets" onclick="go('assets')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+          My Assets
+        </button>
+        <button class="nav-item" data-page="templates" onclick="go('templates')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"/></svg>
+          Templates
+        </button>
+        <button class="nav-item" data-page="status" onclick="go('status')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          System Status
+        </button>
+        <button class="nav-item" data-page="playground" onclick="go('playground')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          API Playground
+        </button>
+        <button class="nav-item" data-page="changelog" onclick="go('changelog')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/></svg>
+          Changelog
+        </button>
+        <button class="nav-item" data-page="create" onclick="if(!editingId)resetCreateForm();go('create')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
+          Create Script
+        </button>
+        <button class="nav-item" data-page="studio" onclick="go('studio')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          Studio
+        </button>
+        <button class="nav-item" data-page="cloudui" onclick="go('cloudui')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          Cloud UI
+        </button>
+        <button class="nav-item" data-page="alerts" onclick="go('alerts')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+          Remote Alerts
+        </button>
+        <button class="nav-item" data-page="promos" onclick="go('promos')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
+          Promos
+        </button>
+        <button class="nav-item" data-page="telemetry" onclick="go('telemetry')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Live Telemetry
+        </button>
+        <button class="nav-item" data-page="bugs" onclick="go('bugs')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          Bug Reports
+        </button>
+        <button class="nav-item" data-page="routes" onclick="go('routes')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+          Dynamic Routes
+        </button>
+        <button class="nav-item" data-page="security" onclick="go('security')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          Anti-Pirate
+        </button>
+
+        <button class="nav-item" data-page="executions" onclick="go('executions')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          Analytics
+        </button>
+        <div class="nav-section">Developer</div>
+        <button class="nav-item" data-page="apiinfo" onclick="go('apiinfo')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+          API Info
+        </button>
+        <div class="nav-section admin-only" style="display:none">Admin</div>
+        <button class="nav-item admin-only" style="display:none" data-page="admin" onclick="go('admin')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          Admin Panel
+        </button>
+        <div class="nav-section">Account</div>
+        <button class="nav-item" data-page="settings" onclick="go('settings')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          Settings
+        </button>
+      </nav>
+      <div class="user-pill">
+        <div class="avatar" id="userAvatar">?</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="text-sm font-medium truncate" id="userLabel">—</span>
+            <span id="sidebarVip" class="hidden text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:#3d3418;color:#fbbf24;border:1px solid #5c4d1f">VIP</span>
+            <span id="sidebarAdmin" class="hidden text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:#1a1428;color:#a78bfa;border:1px solid #3b2a5c">ADMIN</span>
+          </div>
+          <div class="text-xs" style="color:#5a5a6e" id="sidebarRole">Usuario</div>
+        </div>
+        <button onclick="logout()" title="Salir" style="background:none;border:none;color:#5a5a6e;cursor:pointer;padding:4px">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <main class="flex-1 ml-[260px] min-h-screen">
+      <div class="flex items-center px-8 py-4 border-b" style="border-color:#1a1a24">
+        <div class="text-sm" style="color:#5a5a6e">Dashboard <span style="color:#3a3a4a">›</span> <span id="breadcrumb" style="color:#a0a0b0">Overview</span></div>
+      </div>
+
+      <div class="p-8">
+        <!-- OVERVIEW -->
+        <section id="page-overview" class="page">
+          <h1 class="text-2xl font-bold mb-6">Overview</h1>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl mb-8">
+            <div class="card p-5">
+              <div class="text-xs font-medium mb-2" style="color:#6b6b80">Scripts</div>
+              <div class="stat-val" id="stScripts">0</div>
+            </div>
+            <div class="card p-5">
+              <div class="text-xs font-medium mb-2" style="color:#6b6b80">Ejecuciones totales</div>
+              <div class="stat-val" style="color:#a78bfa" id="stExec">0</div>
+            </div>
+            <div class="card p-5">
+              <div class="text-xs font-medium mb-2" style="color:#6b6b80">Estado</div>
+              <div class="flex items-center gap-2 mt-3">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                <span class="text-sm font-medium text-emerald-400">Online</span>
+              </div>
+            </div>
+          </div>
+          <div class="card p-5 max-w-4xl">
+            <div class="text-sm font-semibold mb-4">Ejecuciones (últimos 7 días)</div>
+            <canvas id="chartOverview" height="120"></canvas>
+          </div>
+        </section>
+
+        <!-- SCRIPTS LIST -->
+        <section id="page-scripts" class="page hidden">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <h1 class="text-2xl font-bold">Lua Scripts</h1>
+            <div class="flex items-center gap-3">
+              <div class="search-box">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <input id="scriptSearch" placeholder="Buscar script..." oninput="filterScripts()" />
+              </div>
+              <button onclick="resetCreateForm();go('create')" class="btn-primary text-sm py-2.5 px-4">+ Create</button>
+            </div>
+          </div>
+          <div id="scriptsList" class="grid gap-3"></div>
+        </section>
+
+
+        <!-- SCRIPT HUB -->
+        <section id="page-hub" class="page hidden">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <div>
+              <h1 class="text-2xl font-bold">Script Hub</h1>
+              <p class="text-xs mt-1" style="color:#5a5a6e">Scripts públicos de la comunidad · mínimo 500 ejecuciones para publicar</p>
+            </div>
+            <button onclick="document.getElementById('hubPublishCard').classList.toggle('hidden')" class="btn-primary text-sm py-2.5 px-4">+ Publicar</button>
+          </div>
+
+          <div id="hubPublishCard" class="card p-6 max-w-2xl mb-6 hidden">
+            <div class="text-sm font-semibold mb-1">Publicar en el Hub</div>
+            <div class="text-xs mb-4" style="color:#5a5a6e">Scripts con <b style="color:#a78bfa">500+ ejecuciones</b> o cuenta <b style="color:#fbbf24">Premium</b>. Todos verán el loadstring.</div>
+            <div class="space-y-4">
+              <div>
+                <label class="field">Tu script (500+ runs) <span class="req">*</span></label>
+                <select id="hubScriptSelect"></select>
+              </div>
+              <div>
+                <label class="field">Nombre público <span class="req">*</span></label>
+                <input id="hubName" placeholder="Nombre que verán todos"/>
+              </div>
+              <div>
+                <label class="field">Descripción</label>
+                <input id="hubDesc" placeholder="Opcional"/>
+              </div>
+              <div class="flex gap-3">
+                <button onclick="publishHub()" class="btn-primary" id="hubPublishBtn">Publicar</button>
+                <button onclick="document.getElementById('hubPublishCard').classList.add('hidden')" class="btn-ghost">Cancelar</button>
+              </div>
+              <p id="hubErr" class="text-sm text-red-400 hidden"></p>
+            </div>
+          </div>
+
+          <div class="search-box mb-4" style="max-width:320px">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input id="hubSearch" placeholder="Buscar en el hub..." oninput="filterHub()"/>
+          </div>
+          <div id="hubList" class="grid gap-3"></div>
+        </section>
+
+        <!-- KEY SYSTEM -->
+        <section id="page-keys" class="page hidden">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <div>
+              <h1 class="text-2xl font-bold">Key System</h1>
+              <p class="text-xs mt-1" style="color:#5a5a6e">Providers · Keys · HWID · Verificación Roblox</p>
+            </div>
+            <div class="flex gap-2">
+              <button onclick="document.getElementById('provCard').classList.toggle('hidden')" class="btn-ghost text-sm">+ Provider</button>
+              <button onclick="document.getElementById('keyGenCard').classList.toggle('hidden')" class="btn-primary text-sm py-2.5 px-4">+ Generate Keys</button>
+            </div>
+          </div>
+
+          <div id="provCard" class="card p-6 max-w-xl mb-6 hidden">
+            <div class="text-sm font-semibold mb-4">Create Provider</div>
+            <div class="space-y-3">
+              <div><label class="field">Provider name <span class="req">*</span></label><input id="provName" placeholder="MyScript"/></div>
+              <div class="grid grid-cols-2 gap-3">
+                <div><label class="field">Key validity (hours)</label><input id="provHours" type="number" value="24" min="1"/></div>
+                <div><label class="field">HWID limit</label><input id="provHwid" type="number" value="1" min="1" max="10"/></div>
+              </div>
+              <button class="btn-primary" onclick="createProvider()">Create Provider</button>
+            </div>
+          </div>
+
+          <div id="keyGenCard" class="card p-6 max-w-xl mb-6 hidden">
+            <div class="text-sm font-semibold mb-4">Generate Keys</div>
+            <div class="space-y-3">
+              <div><label class="field">Provider <span class="req">*</span></label><select id="keyProvSelect"></select></div>
+              <div class="grid grid-cols-3 gap-3">
+                <div><label class="field">Amount</label><input id="keyAmount" type="number" value="1" min="1" max="50"/></div>
+                <div><label class="field">Hours (0=∞)</label><input id="keyHours" type="number" value="24" min="0"/></div>
+                <div><label class="field">HWID limit</label><input id="keyHwidLim" type="number" value="1" min="1" max="10"/></div>
+              </div>
+              <div><label class="field">Note</label><input id="keyNote" placeholder="opcional"/></div>
+              <button class="btn-primary" onclick="generateKeys()">Generate</button>
+              <textarea id="keyGenOut" readonly class="h-24 font-mono text-xs hidden" style="color:#34d399"></textarea>
+            </div>
+          </div>
+
+          <div class="grid lg:grid-cols-2 gap-4 mb-6">
+            <div class="card p-5">
+              <div class="text-sm font-semibold mb-3">Providers</div>
+              <div id="provList" class="space-y-2 text-sm"></div>
+            </div>
+            <div class="card p-5">
+              <div class="text-sm font-semibold mb-2">Loader Lua (copia en tu script)</div>
+              <p class="text-xs mb-3" style="color:#5a5a6e">Cambia PROVIDER_NAME. Verifica key + HWID contra QrexApi.</p>
+              <pre id="loaderSnippet" class="text-[10px] overflow-x-auto whitespace-pre-wrap break-all p-3 rounded-lg font-mono" style="background:#0c0c12;color:#a0a0b0;max-height:220px"></pre>
+              <button class="btn-ghost text-xs mt-2" onclick="copyLs(document.getElementById('loaderSnippet').textContent)">Copiar loader</button>
+            </div>
+          </div>
+
+          <div class="card overflow-hidden">
+            <div class="px-5 py-3 border-b text-sm font-semibold flex justify-between items-center" style="border-color:#1e1e2a">
+              <span>Keys</span>
+              <button class="btn-ghost text-xs" onclick="loadKeysTable()">Refresh</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table>
+                <thead><tr><th>Key</th><th>Provider</th><th>HWID</th><th>Expires</th><th>Uses</th><th></th></tr></thead>
+                <tbody id="keysTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- CREATE SCRIPT (estilo UNKIE) -->
+        <section id="page-create" class="page hidden">
+          <div class="card max-w-3xl overflow-hidden">
+            <div class="flex items-center justify-between px-6 py-4 border-b" style="border-color:#1e1e2a">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background:#1a1428">
+                  <svg width="18" height="18" fill="none" stroke="#a78bfa" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                </div>
+                <div>
+                  <div class="font-semibold" id="createTitle">Create Script</div>
+                  <div class="text-xs" style="color:#5a5a6e" id="createSubtitle">Create or modify Lua script</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="p-6 space-y-5">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="field">Name <span class="req">*</span></label>
+                  <input id="sName" placeholder="My script"/>
+                </div>
+                <div>
+                  <label class="field">Description</label>
+                  <input id="sDesc" placeholder="Optional"/>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="field">Access mode</label>
+                  <select id="sKeyMode" onchange="document.getElementById('sProvWrap').style.display=this.value==='key'?'block':'none'">
+                    <option value="keyless">Keyless (sin key)</option>
+                    <option value="key">Con Key System</option>
+                  </select>
+                </div>
+                <div id="sProvWrap" style="display:none">
+                  <label class="field">Provider</label>
+                  <select id="sProvider"></select>
+                </div>
+              </div>
+              <div>
+                <label class="field">Protección del código</label>
+                <select id="sObfMode">
+                  <option value="qrex">QyrexObf (online)</option>
+                  <option value="local">Local 5× XOR + Base64</option>
+                  <option value="none">Sin ofuscar (anti-tamper HTTP)</option>
+                </select>
+              </div>
+              <div class="text-xs" style="color:#5a5a6e">Gratis: máx 15 scripts · VIP: ilimitados</div>
+
+              <div class="tab-bar">
+                <button type="button" class="active" id="tabScript">
+                  <span style="color:#34d399">●</span> Script
+                </button>
+                <button type="button" id="tabUi" style="opacity:.5;cursor:default" title="Próximamente">
+                  UI-Source
+                </button>
+              </div>
+
+              <div class="hint-green">
+                This is your script. It gets obfuscated before it reaches users — paste your source here.
+              </div>
+
+              <div class="editor-wrap" id="studioEditor">
+                <div class="editor-header">
+                  <div class="flex items-center gap-2 text-xs">
+                    <span style="color:#8b8b9e">&lt;/&gt; Studio · Lua</span>
+                    <span class="badge badge-green">Protected</span>
+                    <span class="badge" id="studioLang">Lua 5.1</span>
+                  </div>
+                  <div class="studio-toolbar">
+                    <button type="button" class="btn-ghost" onclick="studioInsertTab()" title="Tab">Tab</button>
+                    <button type="button" class="btn-ghost" onclick="studioComment()" title="Comentar">//</button>
+                    <button type="button" class="btn-ghost" onclick="studioFormat()" title="Indentar">Format</button>
+                    <button type="button" class="btn-ghost" onclick="studioDownload()" title="Descargar .lua">Download</button>
+                    <label class="btn-ghost cursor-pointer" style="padding:5px 10px">
+                      Upload
+                      <input type="file" accept=".lua,.txt" class="hidden" onchange="uploadFile(this)"/>
+                    </label>
+                    <button type="button" class="btn-ghost" onclick="studioClear()" title="Limpiar">Clear</button>
+                    <button type="button" class="btn-ghost" onclick="studioToggleAi()">AI Tips</button>
+                  </div>
+                </div>
+                <div class="editor-body">
+                  <div class="line-nums" id="lineNums">1</div>
+                  <textarea id="sSource" placeholder="-- Escribe tu Lua aquí (Studio)
+-- Los números de línea están a la izquierda y no tapan el código
+local Players = game:GetService(&quot;Players&quot;)
+" oninput="onStudioInput()" onscroll="syncStudioScroll()" onkeydown="studioKey(event)" spellcheck="false"></textarea>
+                </div>
+                <div class="ai-panel" id="aiPanel">
+                  <div class="text-xs mb-1" style="color:#6b6b80">Sugerencias rápidas (clic para insertar)</div>
+                  <div id="aiChips"></div>
+                </div>
+                <div class="studio-status">
+                  <span id="studioPos">Ln 1, Col 1</span>
+                  <span id="studioStats">0 líneas · 0 chars</span>
+                  <span>UTF-8 · Spaces: 2</span>
+                </div>
+              </div>
+
+              <div id="createOutWrap" class="hidden">
+                <label class="field">Loadstring</label>
+                <textarea id="createOut" readonly class="h-16 font-mono text-xs" style="color:#34d399"></textarea>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-end gap-3 px-6 py-4 border-t" style="border-color:#1e1e2a;background:#0d0d14">
+              <button type="button" onclick="resetCreateForm();go('scripts')" class="btn-ghost px-5 py-2.5">Cancel</button>
+              <input type="hidden" id="editId" value=""/>
+              <button id="createBtn" onclick="createScript()" class="btn-primary px-5 py-2.5 flex items-center gap-2">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                <span id="createBtnLabel">Create</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ANALYTICS / EXECUTIONS CON GRÁFICAS -->
+        <section id="page-executions" class="page hidden">
+          <h1 class="text-2xl font-bold mb-6">Analytics</h1>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+            <div class="card p-5">
+              <div class="text-sm font-semibold mb-1">Ejecuciones por día</div>
+              <div class="text-xs mb-4" style="color:#5a5a6e">Últimos 14 días</div>
+              <canvas id="chartDaily" height="180"></canvas>
+            </div>
+            <div class="card p-5">
+              <div class="text-sm font-semibold mb-1">Por script</div>
+              <div class="text-xs mb-4" style="color:#5a5a6e">Top scripts</div>
+              <canvas id="chartScripts" height="180"></canvas>
+            </div>
+          </div>
+          <div class="card p-5 mb-6">
+            <div class="text-sm font-semibold mb-1">Actividad horaria</div>
+            <div class="text-xs mb-4" style="color:#5a5a6e">Distribución por hora (UTC)</div>
+            <canvas id="chartHourly" height="100"></canvas>
+          </div>
+          <div class="card overflow-hidden">
+            <div class="px-5 py-3 border-b text-sm font-semibold" style="border-color:#1e1e2a">Últimas ejecuciones</div>
+            <table>
+              <thead><tr><th>Fecha</th><th>Script</th><th>Hora</th></tr></thead>
+              <tbody id="execTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- API INFO -->
+        <section id="page-apiinfo" class="page hidden">
+          <h1 class="text-2xl font-bold mb-6">API Info</h1>
+          <div class="card p-6 max-w-2xl space-y-4">
+            <div>
+              <div class="text-xs font-medium mb-1" style="color:#6b6b80">Base URL</div>
+              <code class="text-sm" style="color:#a78bfa" id="apiBase"></code>
+            </div>
+            <div>
+              <div class="text-xs font-medium mb-1" style="color:#6b6b80">Health</div>
+              <code class="text-sm" style="color:#8b8b9e">GET /api/health</code>
+            </div>
+            <div>
+              <div class="text-xs font-medium mb-1" style="color:#6b6b80">Raw script</div>
+              <code class="text-sm" style="color:#8b8b9e">GET /api/raw/:id</code>
+            </div>
+            <div class="hint-green">Si abres /api/raw/:id en el navegador verás la página Access Denied. Solo Roblox/executors reciben el script.</div>
+          </div>
+        </section>
+
+
+        <!-- ADMIN -->
+        <section id="page-admin" class="page hidden">
+          <h1 class="text-2xl font-bold mb-2">Admin Panel</h1>
+          <p class="text-xs mb-6" style="color:#5a5a6e">Solo visible para OWNER / admin</p>
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="adminStats">
+            <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Users</div><div class="text-2xl font-bold" id="aUsers">—</div></div>
+            <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Scripts</div><div class="text-2xl font-bold" id="aScripts">—</div></div>
+            <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Hub</div><div class="text-2xl font-bold" id="aHub">—</div></div>
+            <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Premium</div><div class="text-2xl font-bold" style="color:#fbbf24" id="aPrem">—</div></div>
+          </div>
+
+          <div class="card p-6 mb-6 max-w-xl">
+            <div class="text-sm font-semibold mb-3">Dar / quitar Premium</div>
+            <div class="flex flex-wrap gap-2">
+              <input id="premUser" placeholder="username" style="max-width:160px"/>
+              <input id="premDays" type="number" placeholder="días (30)" value="30" style="max-width:110px"/>
+              <button class="btn-primary text-sm" onclick="adminSetPremium(true)">Activar</button>
+              <button class="btn-ghost text-sm" style="color:#f87171;border-color:#3a1a1a" onclick="adminSetPremium(false)">Quitar</button>
+            </div>
+          </div>
+
+          <div class="card overflow-hidden mb-6">
+            <div class="px-5 py-3 border-b text-sm font-semibold" style="border-color:#1e1e2a">Usuarios</div>
+            <div class="overflow-x-auto">
+              <table>
+                <thead><tr><th>User</th><th>Role</th><th>Premium</th><th>Desde</th></tr></thead>
+                <tbody id="adminUsers"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card overflow-hidden mb-6">
+            <div class="px-5 py-3 border-b text-sm font-semibold flex justify-between" style="border-color:#1e1e2a">
+              <span>Todos los scripts</span>
+              <button class="btn-ghost text-xs" onclick="loadAdminScripts()">Refresh</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table>
+                <thead><tr><th>Name</th><th>Owner</th><th>Runs</th><th></th></tr></thead>
+                <tbody id="adminScripts"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card p-6 mb-6 max-w-xl">
+            <div class="text-sm font-semibold mb-3">IP Blacklist</div>
+            <div class="flex gap-2 mb-3">
+              <input id="blIp" placeholder="IP" style="max-width:160px"/>
+              <input id="blReason" placeholder="Razón" style="max-width:160px"/>
+              <button class="btn-primary text-sm" onclick="adminAddBlacklist()">Ban IP</button>
+            </div>
+            <div id="adminBlacklist" class="text-xs space-y-1" style="color:#8b8b9e"></div>
+          </div>
+
+          <div class="card overflow-hidden">
+            <div class="px-5 py-3 border-b text-sm font-semibold" style="border-color:#1e1e2a">Hub público</div>
+            <div class="overflow-x-auto">
+              <table>
+                <thead><tr><th>Name</th><th>Author</th><th>Views</th><th></th></tr></thead>
+                <tbody id="adminHub"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- WEBHOOKS -->
+        <section id="page-webhooks" class="page hidden">
+          <h1 class="text-2xl font-bold mb-2">Webhooks</h1>
+          <p class="text-xs mb-6" style="color:#5a5a6e">Alertas a Discord cuando verifican una key o ejecutan un script</p>
+          <div class="card p-6 max-w-xl mb-6 space-y-3">
+            <input id="whUrl" placeholder="https://discord.com/api/webhooks/..."/>
+            <button class="btn-primary" onclick="addWebhook()">Añadir webhook</button>
+            <button class="btn-ghost" onclick="testWebhook()">Probar URL</button>
+          </div>
+          <div id="whList" class="grid gap-3 max-w-xl"></div>
+        </section>
+
+        <!-- LEADERBOARD -->
+        <section id="page-leaderboard" class="page hidden">
+          <h1 class="text-2xl font-bold mb-6">Leaderboard</h1>
+          <div class="card overflow-hidden max-w-2xl">
+            <table>
+              <thead><tr><th>#</th><th>Dev</th><th>Scripts</th><th>Ejecuciones</th></tr></thead>
+              <tbody id="lbTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ASSETS -->
+        <section id="page-assets" class="page hidden">
+          <h1 class="text-2xl font-bold mb-2">My Assets</h1>
+          <p class="text-xs mb-6" style="color:#5a5a6e">Nube privada: texto, URLs, snippets UI (máx 20 free / 100 VIP)</p>
+          <div class="card p-6 max-w-xl mb-6 space-y-3">
+            <input id="assetName" placeholder="Nombre"/>
+            <select id="assetType"><option value="text">Text / Lua</option><option value="url">URL</option><option value="image">Image URL</option></select>
+            <textarea id="assetContent" class="h-28 font-mono text-sm" placeholder="Contenido o URL"></textarea>
+            <button class="btn-primary" onclick="addAsset()">Subir asset</button>
+          </div>
+          <div id="assetList" class="grid gap-3"></div>
+        </section>
+
+        <!-- TEMPLATES -->
+        <section id="page-templates" class="page hidden">
+          <h1 class="text-2xl font-bold mb-6">Templates / Snippets</h1>
+          <div id="tplList" class="grid gap-3 max-w-3xl"></div>
+        </section>
+
+        <!-- STATUS -->
+        <section id="page-status" class="page hidden">
+          <h1 class="text-2xl font-bold mb-6">System Status</h1>
+          <div class="grid sm:grid-cols-3 gap-4 max-w-3xl mb-6">
+            <div class="card p-5"><div class="text-xs mb-1" style="color:#6b6b80">API</div><div id="stApi" class="text-lg font-bold">—</div></div>
+            <div class="card p-5"><div class="text-xs mb-1" style="color:#6b6b80">MongoDB</div><div id="stMongo" class="text-lg font-bold">—</div></div>
+            <div class="card p-5"><div class="text-xs mb-1" style="color:#6b6b80">Ping DB</div><div id="stPing" class="text-lg font-bold">—</div></div>
+          </div>
+          <div class="card p-5 max-w-3xl">
+            <div class="text-sm font-semibold mb-2">Rate limiting</div>
+            <p class="text-xs" style="color:#8b8b9e">Límite global: 200 requests / 15 min por IP en rutas /api/*. Si te pasas recibirás HTTP 429.</p>
+            <div class="text-xs mt-3" style="color:#5a5a6e" id="stUptime">Uptime: —</div>
+          </div>
+        </section>
+
+        <!-- PLAYGROUND -->
+        <section id="page-playground" class="page hidden">
+          <h1 class="text-2xl font-bold mb-6">API Playground</h1>
+          <div class="card p-6 max-w-2xl space-y-3">
+            <div class="flex gap-2">
+              <select id="pgMethod" style="max-width:120px"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select>
+              <input id="pgPath" placeholder="/api/health" value="/api/health"/>
+            </div>
+            <textarea id="pgBody" class="h-28 font-mono text-xs" placeholder='{"example":true}'></textarea>
+            <label class="flex items-center gap-2 text-xs" style="color:#8b8b9e"><input type="checkbox" id="pgAuth" checked style="width:auto"/> Usar token de sesión</label>
+            <button class="btn-primary" onclick="runPlayground()">Send</button>
+            <pre id="pgOut" class="text-xs p-3 rounded-lg overflow-auto font-mono" style="background:#0c0c12;color:#34d399;max-height:280px"></pre>
+          </div>
+        </section>
+
+        <!-- CHANGELOG -->
+        <section id="page-changelog" class="page hidden">
+          <h1 class="text-2xl font-bold mb-6">Changelog</h1>
+          <div class="space-y-4 max-w-2xl">
+            <div class="card p-5"><div class="text-sm font-semibold" style="color:#a78bfa">v2.0 — Feature drop</div><div class="text-xs mt-2" style="color:#8b8b9e">Key System, Hub, VIP, Admin, Webhooks, Leaderboard, Assets, Templates, Versions, Status, Themes, Playground, IP Blacklist, límite 15 scripts (ilimitado VIP).</div></div>
+            <div class="card p-5"><div class="text-sm font-semibold">v1.0 — Launch</div><div class="text-xs mt-2" style="color:#8b8b9e">Auth usuario/contraseña, scripts ofuscados, analytics, access denied page.</div></div>
+          </div>
+        </section>
+
+
+        <section id="page-studio" class="page hidden">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <div>
+              <h1 class="text-2xl font-bold">Studio</h1>
+              <p class="text-xs mt-1" style="color:#5a5a6e">Editor libre · OpenRouter IA · números sin tapar código</p>
+            </div>
+            <div class="flex gap-2">
+              <button class="btn-ghost text-sm" onclick="studioDownload2()">Download</button>
+              <button class="btn-primary text-sm" onclick="studioToCreate()">Usar en Create →</button>
+            </div>
+          </div>
+          <div class="card p-4 mb-4 max-w-4xl">
+            <div class="text-sm font-semibold mb-1">Generador</div>
+            <div class="text-xs mb-2" style="color:#5a5a6e">IA real (OpenRouter). Ej: "aimbot con FOV 120", "ESP highlight", "auto farm de coins"</div>
+            <div class="flex gap-2 flex-wrap mb-2">
+              <input id="aiPrompt" class="flex-1 min-w-[180px]" placeholder="hazme un aimbot básico" onkeydown="if(event.key==='Enter')runAiGenerate()"/>
+              <button class="btn-primary" onclick="runAiGenerate()">Generar</button>
+            </div>
+            <div class="flex flex-wrap gap-2" id="aiQuick"></div>
+          </div>
+          <div class="editor-wrap max-w-4xl" id="studioEditor2">
+            <div class="editor-header">
+              <div class="flex items-center gap-2 text-xs">
+                <span style="color:#8b8b9e">&lt;/&gt; Studio · Lua</span>
+                <span class="badge badge-green">Live</span>
+              </div>
+              <div class="studio-toolbar">
+                <button type="button" class="btn-ghost" onclick="studioComment2()">//</button>
+                <button type="button" class="btn-ghost" onclick="studioFormat2()">Format</button>
+                <label class="btn-ghost cursor-pointer">Upload<input type="file" accept=".lua,.txt" class="hidden" onchange="uploadStudio(this)"/></label>
+                <button type="button" class="btn-ghost" onclick="document.getElementById('studioSource').value='';updateStudioLines()">Clear</button>
+              </div>
+            </div>
+            <div class="editor-body">
+              <div class="line-nums" id="studioLineNums">1</div>
+              <textarea id="studioSource" placeholder="-- código libre aquí" oninput="updateStudioLines()" onscroll="document.getElementById('studioLineNums').scrollTop=this.scrollTop" onkeydown="studioKey2(event)" spellcheck="false"></textarea>
+            </div>
+            <div class="studio-status"><span id="studioPos2">Ln 1, Col 1</span><span id="studioStats2">0 líneas</span></div>
+          </div>
+        </section>
+
+
+        <section id="page-cloudui" class="page hidden">
+          <h1 class="text-2xl font-bold mb-2">Cloud UI Library</h1>
+          <p class="text-xs mb-4" style="color:#5a5a6e">Importa UIs con loadstring desde el raw público</p>
+          <div class="card p-5 max-w-2xl mb-4 space-y-3">
+            <input id="cuiName" placeholder="Nombre UI"/>
+            <input id="cuiDesc" placeholder="Descripción"/>
+            <textarea id="cuiCode" class="h-40 font-mono text-xs" placeholder="-- módulo UI Lua"></textarea>
+            <button class="btn-primary" onclick="saveCloudUI()">Subir UI</button>
+          </div>
+          <div id="cuiList" class="grid gap-3 max-w-3xl"></div>
+        </section>
+
+        <section id="page-alerts" class="page hidden">
+          <h1 class="text-2xl font-bold mb-2">Remote Alerts</h1>
+          <p class="text-xs mb-4" style="color:#5a5a6e">Mensajes in-game para usuarios que ejecutan tus scripts (poll API)</p>
+          <div class="card p-5 max-w-xl mb-4 space-y-3">
+            <input id="alTitle" placeholder="Título" value="Aviso"/>
+            <textarea id="alMsg" class="h-24" placeholder="Mensaje global"></textarea>
+            <input id="alHours" type="number" placeholder="Horas activo (24)" value="24"/>
+            <button class="btn-primary" onclick="sendAlert()">Enviar alerta</button>
+          </div>
+          <div id="alList" class="grid gap-2 max-w-xl"></div>
+          <pre class="text-[11px] mt-4 p-3 rounded max-w-xl" style="background:#0c0c12;color:#8b8b9e" id="alSnippet"></pre>
+        </section>
+
+        <section id="page-promos" class="page hidden">
+          <h1 class="text-2xl font-bold mb-2">Cupones / Promos</h1>
+          <div class="card p-5 max-w-xl mb-4 space-y-3">
+            <input id="promoCode" placeholder="VERANO2026"/>
+            <div class="grid grid-cols-2 gap-2">
+              <input id="promoHours" type="number" value="24" placeholder="Horas extra"/>
+              <input id="promoMax" type="number" value="100" placeholder="Máx usos"/>
+            </div>
+            <button class="btn-primary" onclick="createPromo()">Crear cupón</button>
+          </div>
+          <div class="card p-5 max-w-xl mb-4 space-y-2">
+            <div class="text-sm font-semibold">Get-Key link (Linkvertise / Monetag)</div>
+            <select id="gkProv"></select>
+            <input id="gkGate" placeholder="URL de tu acortador (opcional)"/>
+            <button class="btn-ghost" onclick="genGetKey()">Generar claim URL</button>
+            <textarea id="gkOut" readonly class="h-20 text-xs font-mono"></textarea>
+          </div>
+          <div id="promoList" class="grid gap-2 max-w-xl"></div>
+        </section>
+
+        <section id="page-telemetry" class="page hidden">
+          <div class="flex justify-between items-center mb-4">
+            <h1 class="text-2xl font-bold">Live Telemetry</h1>
+            <button class="btn-ghost text-sm" onclick="loadTelemetry()">Refresh</button>
+          </div>
+          <div class="card p-4 font-mono text-xs overflow-auto" style="max-height:480px;background:#050508" id="telBox"></div>
+        </section>
+
+        <section id="page-bugs" class="page hidden">
+          <h1 class="text-2xl font-bold mb-4">Bug Reports</h1>
+          <div id="bugList" class="grid gap-3 max-w-2xl"></div>
+        </section>
+
+        <section id="page-routes" class="page hidden">
+          <h1 class="text-2xl font-bold mb-2">Dynamic Routes</h1>
+          <p class="text-xs mb-4" style="color:#5a5a6e">Rutas /r/slug rotables para despistar scraping</p>
+          <div class="card p-5 max-w-xl mb-4 space-y-3">
+            <select id="routeScript"></select>
+            <button class="btn-primary" onclick="createRoute()">Crear ruta</button>
+          </div>
+          <div id="routeList" class="grid gap-2 max-w-xl"></div>
+        </section>
+
+        <section id="page-security" class="page hidden">
+          <h1 class="text-2xl font-bold mb-2">Anti-Pirate / Env Check</h1>
+          <p class="text-xs mb-4" style="color:#5a5a6e">Valida emuladores, Studio, hooks de debug desde el script</p>
+          <pre class="text-[11px] p-4 rounded overflow-auto max-w-3xl" style="background:#0c0c12;color:#a0a0b0" id="secSnippet"></pre>
+          <button class="btn-ghost text-xs mt-2" onclick="copyLs(document.getElementById('secSnippet').textContent)">Copiar snippet</button>
+        </section>
+
+        <!-- SETTINGS -->
+        <section id="page-settings" class="page hidden">
+          <h1 class="text-2xl font-bold mb-6">Settings</h1>
+          <div class="grid gap-4 max-w-2xl">
+            <div class="card p-6">
+              <div class="text-sm font-semibold mb-1">Cuenta</div>
+              <div class="text-xs mb-4" style="color:#5a5a6e">Información de tu sesión</div>
+              <div class="flex items-center gap-3 mb-4">
+                <div class="avatar" id="settingsAvatar">?</div>
+                <div>
+                  <div class="font-medium" id="settingsUser">—</div>
+                  <div id="userBadges" class="flex flex-wrap gap-1 mt-1"></div>
+                </div>
+              </div>
+              <div id="premiumBox" class="mt-4 p-4 rounded-xl" style="background:#14120a;border:1px solid #3d3418">
+                <div class="text-sm font-semibold" style="color:#fbbf24">✦ Premium</div>
+                <div class="text-xs mt-1 mb-3" style="color:#8b8b9e">Publica en el Hub sin 500 runs, badge dorado y más prioridad.</div>
+                <div class="text-xs" style="color:#5a5a6e">Contacta a <b style="color:#a78bfa">OWNER</b> para activar Premium en tu cuenta.</div>
+              </div>
+              <button onclick="logout()" class="btn-ghost mt-4" style="color:#f87171;border-color:#3a1a1a">Cerrar sesión</button>
+            </div>
+            <div class="card p-6">
+              <div class="text-sm font-semibold mb-1">Preferencias</div>
+              <div class="text-xs mb-4" style="color:#5a5a6e">Opciones locales del panel</div>
+              <label class="flex items-center justify-between py-2 cursor-pointer">
+                <span class="text-sm" style="color:#a0a0b0">Animaciones</span>
+                <input type="checkbox" id="prefAnim" checked onchange="toggleAnim(this.checked)" style="width:auto;accent-color:#7c3aed"/>
+              </label>
+              <label class="flex items-center justify-between py-2 cursor-pointer">
+                <span class="text-sm" style="color:#a0a0b0">Copiar loadstring al crear</span>
+                <input type="checkbox" id="prefCopy" checked style="width:auto;accent-color:#7c3aed"/>
+              </label>
+              <div class="mt-4">
+                <div class="text-xs mb-2" style="color:#6b6b80">Theme</div>
+                <div class="flex flex-wrap gap-2">
+                  <button class="btn-ghost text-xs" onclick="setTheme('')">Purple</button>
+                  <button class="btn-ghost text-xs" onclick="setTheme('theme-neon')">Neon</button>
+                  <button class="btn-ghost text-xs" onclick="setTheme('theme-cyber')">Cyberpunk</button>
+                  <button class="btn-ghost text-xs" onclick="setTheme('theme-blood')">Blood</button>
+                  <button class="btn-ghost text-xs" onclick="setTheme('theme-matrix')">Matrix</button>
+                  <button class="btn-ghost text-xs" onclick="setTheme('theme-neonblue')">Neon Blue</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+let token = localStorage.getItem('qrex_token') || '';
+let currentUser = null;
+let mode = 'login';
+let chartDaily, chartScripts, chartHourly, chartOverview;
+
+const chartDefaults = {
+  responsive: true,
+  maintainAspectRatio: true,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#5a5a6e', font: { size: 11 } } },
+    y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#5a5a6e', font: { size: 11 } }, beginAtZero: true }
+  }
+};
+
+function headers(){ return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }; }
+
+function setTab(m){
+  mode = m;
+  const btn = document.getElementById('authBtn');
+  const tL = document.getElementById('tabLogin');
+  const tR = document.getElementById('tabReg');
+  if (m === 'login') {
+    btn.textContent = 'Entrar';
+    tL.style.background = '#7c3aed'; tL.style.color = '#fff';
+    tR.style.background = 'transparent'; tR.style.color = '#6b6b80';
+  } else {
+    btn.textContent = 'Crear cuenta';
+    tR.style.background = '#7c3aed'; tR.style.color = '#fff';
+    tL.style.background = 'transparent'; tL.style.color = '#6b6b80';
+  }
+  document.getElementById('loginErr').classList.add('hidden');
+}
+
+function showApp(user){
+  currentUser = user || {};
+  document.getElementById('loginView').style.display = 'none';
+  document.getElementById('appView').style.display = 'block';
+  const name = user?.username || '?';
+  document.getElementById('userLabel').textContent = name;
+  document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+  const sa = document.getElementById('settingsAvatar');
+  const su = document.getElementById('settingsUser');
+  if (sa) sa.textContent = name.charAt(0).toUpperCase();
+  if (su) su.textContent = name;
+  // badges
+  const badgeEl = document.getElementById('userBadges');
+  if (badgeEl) {
+    let b = '';
+    if (user?.role === 'admin') b += '<span class="chip" style="background:#1a1428;color:#a78bfa;border-color:#3b2a5c">ADMIN</span> ';
+    if (user?.premium) b += '<span class="chip" style="background:#1a1810;color:#fbbf24;border-color:#3d3418">VIP</span>';
+    badgeEl.innerHTML = b || '<span class="text-xs" style="color:#5a5a6e">Usuario QrexApi</span>';
+  }
+  const vip = document.getElementById('sidebarVip');
+  const adm = document.getElementById('sidebarAdmin');
+  const role = document.getElementById('sidebarRole');
+  if (vip) vip.classList.toggle('hidden', !user?.premium);
+  if (adm) adm.classList.toggle('hidden', user?.role !== 'admin');
+  if (role) {
+    if (user?.role === 'admin') role.textContent = 'Administrador';
+    else if (user?.premium) role.textContent = 'VIP · Premium';
+    else role.textContent = 'Usuario';
+  }
+  // admin nav
+  document.querySelectorAll('.admin-only').forEach(el => {
+    el.style.display = user?.role === 'admin' ? '' : 'none';
+  });
+  document.getElementById('apiBase').textContent = location.origin;
+  loadStats();
+  loadScripts();
+  loadAnalytics();
+}
+
+function toggleAnim(on){
+  document.documentElement.style.setProperty('--anim', on ? '1' : '0');
+  if (!on) {
+    document.querySelectorAll('.page,.card,.sidebar').forEach(el => { el.style.animation = 'none'; });
+  }
+}
+
+function logout(){ token = ''; localStorage.removeItem('qrex_token'); location.reload(); }
+
+function setErr(msg){
+  const el = document.getElementById('loginErr');
+  el.classList.remove('hidden');
+  el.textContent = msg || 'Error';
+}
+
+async function doAuth(){
+  const username = document.getElementById('authUser').value.trim();
+  const password = document.getElementById('authPass').value;
+  const btn = document.getElementById('authBtn');
+  if (!username || !password) { setErr('Pon usuario y contraseña'); return; }
+  btn.disabled = true; btn.textContent = '...';
+  document.getElementById('loginErr').classList.add('hidden');
+  try {
+    const url = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
+    const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username,password}) });
+    const text = await r.text();
+    let d;
+    try { d = JSON.parse(text); }
+    catch {
+      const snip = (text || '').replace(/\s+/g,' ').slice(0,80);
+      throw new Error('API no JSON (HTTP '+r.status+'). ¿Servidor caído? ' + snip);
+    }
+    if (!r.ok) throw new Error(d.error || ('Error HTTP '+r.status));
+    token = d.token; localStorage.setItem('qrex_token', token); showApp(d.user);
+  } catch(e) { setErr(e.message); }
+  finally { btn.disabled = false; btn.textContent = mode === 'login' ? 'Entrar' : 'Crear cuenta'; }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('loginView').style.display !== 'none') doAuth();
+});
+
+window.onload = function(){
+  try { refreshAiChips(); updateLines(); } catch(e) {}
+
+  if (token) {
+    fetch('/api/me', { headers: headers() })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(showApp).catch(logout);
+  }
+  updateLines();
+};
+
+const pageNames = { overview:'Overview', scripts:'Lua Scripts', hub:'Script Hub', keys:'Key System', webhooks:'Webhooks', leaderboard:'Leaderboard', assets:'My Assets', templates:'Templates', status:'System Status', playground:'API Playground', changelog:'Changelog', create:'Create Script', studio:'Studio', cloudui:'Cloud UI', alerts:'Remote Alerts', promos:'Promos', telemetry:'Live Telemetry', bugs:'Bug Reports', routes:'Dynamic Routes', security:'Anti-Pirate', executions:'Analytics', apiinfo:'API Info', settings:'Settings', admin:'Admin Panel' };
+
+function go(p){
+  document.querySelectorAll('.page').forEach(x => x.classList.add('hidden'));
+  document.getElementById('page-' + p).classList.remove('hidden');
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector('[data-page="'+p+'"]');
+  if (btn) btn.classList.add('active');
+  document.getElementById('breadcrumb').textContent = pageNames[p] || p;
+  if (p === 'scripts') loadScripts();
+  if (p === 'hub') loadHub();
+  if (p === 'keys') loadKeysPage();
+  if (p === 'webhooks') loadWebhooks();
+  if (p === 'leaderboard') loadLeaderboard();
+  if (p === 'assets') loadAssets();
+  if (p === 'status') loadStatus();
+  if (p === 'create') fillCreateProviders();
+  if (p === 'studio') { try { refreshAiChips(); updateLines(); updateStudioLines(); } catch(e) {} }
+  if (p === 'cloudui') loadCloudUI();
+  if (p === 'alerts') loadAlerts();
+  if (p === 'promos') loadPromos();
+  if (p === 'telemetry') loadTelemetry();
+  if (p === 'bugs') loadBugs();
+  if (p === 'routes') loadRoutes();
+  if (p === 'admin') loadAdmin();
+  if (p === 'overview') { loadStats(); loadAnalytics(); }
+  if (p === 'executions') loadAnalytics();
+}
+
+function esc(t){ const d=document.createElement('div'); d.textContent=t||''; return d.innerHTML; }
+
+function updateLines(){
+  const src = document.getElementById('sSource');
+  const nums = document.getElementById('lineNums');
+  if (!src || !nums) return;
+  const lines = src.value.split('\n');
+  const n = Math.max(1, lines.length);
+  let out = '';
+  for (let i = 1; i <= n; i++) out += i + '\n';
+  nums.textContent = out;
+  // keep heights in sync via scroll only; same line-height
+  nums.scrollTop = src.scrollTop;
+  const pos = document.getElementById('studioPos');
+  const st = document.getElementById('studioStats');
+  if (st) st.textContent = n + ' líneas · ' + src.value.length + ' chars';
+  if (pos) {
+    const off = src.selectionStart || 0;
+    const before = src.value.slice(0, off);
+    const ln = before.split('\n').length;
+    const col = before.length - before.lastIndexOf('\n');
+    pos.textContent = 'Ln ' + ln + ', Col ' + col;
+  }
+}
+function onStudioInput(){ updateLines(); refreshAiChips(); }
+function syncStudioScroll(){
+  const src = document.getElementById('sSource');
+  const nums = document.getElementById('lineNums');
+  if (src && nums) nums.scrollTop = src.scrollTop;
+}
+function studioKey(e){
+  const src = document.getElementById('sSource');
+  if (!src) return;
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const s = src.selectionStart, en = src.selectionEnd;
+    src.value = src.value.slice(0,s) + '  ' + src.value.slice(en);
+    src.selectionStart = src.selectionEnd = s + 2;
+    updateLines();
+  }
+  if (e.key === '/' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    studioComment();
+  }
+  if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    toast('Usa Create/Save para guardar en la nube');
+  }
+  setTimeout(updateLines, 0);
+}
+function studioInsertTab(){
+  const src = document.getElementById('sSource');
+  if (!src) return;
+  const s = src.selectionStart;
+  src.value = src.value.slice(0,s) + '  ' + src.value.slice(src.selectionEnd);
+  src.selectionStart = src.selectionEnd = s + 2;
+  src.focus(); updateLines();
+}
+function studioComment(){
+  const src = document.getElementById('sSource');
+  if (!src) return;
+  const s = src.selectionStart, en = src.selectionEnd;
+  let a = src.value.slice(0,s), mid = src.value.slice(s,en), b = src.value.slice(en);
+  if (!mid) {
+    // comment current line
+    const lineStart = src.value.lastIndexOf('\n', s-1) + 1;
+    src.value = src.value.slice(0,lineStart) + '-- ' + src.value.slice(lineStart);
+  } else {
+    mid = mid.split('\n').map(l => l.startsWith('--') ? l.replace(/^--\s?/,'') : '-- '+l).join('\n');
+    src.value = a + mid + b;
+  }
+  src.focus(); updateLines();
+}
+function studioFormat(){
+  const src = document.getElementById('sSource');
+  if (!src) return;
+  // simple indent by keywords
+  const lines = src.value.split('\n');
+  let ind = 0;
+  const openers = /\b(function|then|do|repeat)\b/;
+  const closers = /\b(end|until|else|elseif)\b/;
+  const out = lines.map(line => {
+    const t = line.trim();
+    if (!t) return '';
+    if (closers.test(t) && !/\bthen\b/.test(t) && !/\bfunction\b/.test(t)) ind = Math.max(0, ind-1);
+    const r = '  '.repeat(ind) + t;
+    if (openers.test(t) && !t.includes('end')) ind++;
+    if (/\belse\b/.test(t) || /\belseif\b/.test(t)) { /* keep */ }
+    return r;
+  });
+  src.value = out.join('\n');
+  updateLines();
+  toast('Formato aplicado');
+}
+function studioDownload(){
+  const src = document.getElementById('sSource');
+  const name = (document.getElementById('sName')?.value || 'script').replace(/[^\\w.-]+/g,'_');
+  const blob = new Blob([src.value], {type:'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name + '.lua';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('Descargado ' + name + '.lua');
+}
+function studioClear(){
+  if (!confirm('¿Limpiar editor?')) return;
+  document.getElementById('sSource').value = '';
+  updateLines();
+}
+function studioToggleAi(){
+  const p = document.getElementById('aiPanel');
+  if (p) p.style.display = p.style.display === 'none' ? '' : 'none';
+}
+const AI_SUGGESTIONS = [
+  { t: 'GetService Players', c: 'local Players = game:GetService("Players")\nlocal LocalPlayer = Players.LocalPlayer\n' },
+  { t: 'Tween', c: 'local TweenService = game:GetService("TweenService")\nTweenService:Create(part, TweenInfo.new(0.3), {Transparency = 1}):Play()\n' },
+  { t: 'HttpGet', c: 'local data = game:HttpGet("https://example.com")\nprint(data)\n' },
+  { t: 'pcall safe', c: 'local ok, err = pcall(function()\n  -- code\nend)\nif not ok then warn(err) end\n' },
+  { t: 'Notify', c: 'game:GetService("StarterGui"):SetCore("SendNotification", {Title = "Qrex", Text = "Hola", Duration = 3})\n' },
+  { t: 'Loop wait', c: 'while task.wait(1) do\n  -- loop\nend\n' },
+  { t: 'Remote fire', c: 'local re = game:GetService("ReplicatedStorage"):WaitForChild("Remote")\nre:FireServer()\n' },
+  { t: 'Character', c: 'local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()\nlocal hum = char:WaitForChild("Humanoid")\n' },
+  { t: 'UI ScreenGui', c: 'local sg = Instance.new("ScreenGui")\nsg.Parent = game.CoreGui\nlocal f = Instance.new("Frame", sg)\nf.Size = UDim2.fromOffset(300, 200)\n' },
+  { t: 'Qrex Key verify', c: '-- Ver key (ajusta provider)\n-- usa el loader del Key System\n' },
+];
+function refreshAiChips(){
+  const box = document.getElementById('aiChips');
+  if (!box) return;
+  const src = (document.getElementById('sSource')?.value || '').toLowerCase();
+  let list = AI_SUGGESTIONS;
+  if (src.includes('player')) list = AI_SUGGESTIONS.filter(x => /player|character|humanoid|notify/i.test(x.t+x.c)).concat(AI_SUGGESTIONS);
+  const seen = new Set();
+  box.innerHTML = list.filter(x => { if(seen.has(x.t)) return false; seen.add(x.t); return true; }).slice(0,10).map((x,i) =>
+    '<span class="ai-chip" onclick="insertAi('+i+')">'+x.t+'</span>'
+  ).join('');
+  window.__aiList = list.filter((x,i,a)=>a.findIndex(y=>y.t===x.t)===i).slice(0,10);
+}
+function insertAi(i){
+  const list = window.__aiList || AI_SUGGESTIONS;
+  const item = list[i];
+  if (!item) return;
+  const src = document.getElementById('sSource');
+  const s = src.selectionStart || src.value.length;
+  const code = item.c;
+  src.value = src.value.slice(0, s) + code + src.value.slice(src.selectionEnd || s);
+  src.focus();
+  updateLines();
+  toast('Insertado: ' + item.t);
+}
+
+function uploadFile(input){
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => { document.getElementById('sSource').value = reader.result; updateLines(); };
+  reader.readAsText(f);
+  input.value = '';
+}
+
+async function loadStats(){
+  try {
+    const r = await fetch('/api/stats', { headers: headers() });
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('stScripts').textContent = d.scripts || 0;
+    document.getElementById('stExec').textContent = d.executions || 0;
+  } catch {}
+}
+
+let allScripts = [];
+let editingId = null;
+
+function toast(msg, type){
+  const w = document.getElementById('toasts');
+  if (!w) return;
+  const t = document.createElement('div');
+  t.className = 'toast ' + (type || 'ok');
+  t.innerHTML = '<span class="t-icon">' + (type === 'err' ? '✕' : '✓') + '</span><span>' + esc(msg) + '</span>';
+  w.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 2800);
+}
+
+function filterScripts(){
+  const q = (document.getElementById('scriptSearch')?.value || '').toLowerCase().trim();
+  renderScripts(q ? allScripts.filter(s => (s.name||'').toLowerCase().includes(q) || (s.description||'').toLowerCase().includes(q)) : allScripts);
+}
+
+function renderScripts(list){
+  const el = document.getElementById('scriptsList');
+  const host = location.origin;
+  if (!list.length) {
+    el.innerHTML = '<div class="card empty-state"><svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg><div>No hay scripts</div><button onclick="go(\'create\')" class="btn-primary mt-4 text-sm">Crear el primero</button></div>';
+    return;
+  }
+  el.innerHTML = list.map(s => {
+    const ls = 'loadstring(game:HttpGet("'+host+'/api/raw/'+s.id+'"))()';
+    const date = s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '';
+    return '<div class="card p-5">'+
+      '<div class="flex justify-between items-start mb-3 gap-3">'+
+        '<div class="min-w-0">'+
+          '<div class="font-semibold truncate" style="color:#c4b5fd">'+esc(s.name)+'</div>'+
+          '<div class="text-xs mt-0.5 truncate" style="color:#5a5a6e">'+esc(s.description||'Sin descripción')+'</div>'+
+          '<div class="flex flex-wrap gap-2 mt-2">'+
+            '<span class="chip">'+(s.executions||0)+' runs</span>'+
+            '<span class="chip">'+(s.obfMode==='local'?'XOR×5':(s.obfMode==='none'||s.doObfuscate===false)?'Plain+AT':'Qyrex')+'</span>'+
+            (date ? '<span class="chip">'+esc(date)+'</span>' : '')+
+            '<span class="chip" style="font-family:monospace;font-size:10px">'+esc((s.id||'').slice(0,10))+'…</span>'+
+          '</div>'+
+        '</div>'+
+        '<div class="script-actions shrink-0">'+
+          '<button class="icon-btn" title="Editar" onclick="editScript(\''+s.id+'\')">'+
+            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>'+
+          '</button>'+
+          '<button class="icon-btn" title="Copiar loadstring" onclick="copyLs(\''+ls.replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">'+
+            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>'+
+          '</button>'+
+          '<button class="icon-btn" title="Copiar ID" onclick="copyLs(\''+s.id+'\')">'+
+            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>'+
+          '</button>'+
+          '<button class="icon-btn" title="Versiones" onclick="showVersions(\''+s.id+'\')">⏱</button>'+
+          '<button class="icon-btn danger" title="Eliminar" onclick="delScript(\''+s.id+'\')">'+
+            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>'+
+          '</button>'+
+        '</div>'+
+      '</div>'+
+      '<pre class="text-[11px] overflow-x-auto whitespace-pre-wrap break-all p-3 rounded-lg" style="background:#0c0c12;color:#5a5a6e">'+esc(ls)+'</pre>'+
+    '</div>';
+  }).join('');
+}
+
+function copyLs(text){
+  navigator.clipboard.writeText(text).then(() => toast('Copiado al portapapeles')).catch(() => toast('No se pudo copiar', 'err'));
+}
+
+async function loadScripts(){
+  try {
+    const r = await fetch('/api/scripts', { headers: headers() });
+    if (!r.ok) return;
+    allScripts = await r.json();
+    filterScripts();
+  } catch {}
+}
+
+async function editScript(id){
+  try {
+    const r = await fetch('/api/scripts/' + id, { headers: headers() });
+    if (!r.ok) { toast('No se pudo cargar el script', 'err'); return; }
+    const s = await r.json();
+    editingId = s.id;
+    document.getElementById('editId').value = s.id;
+    document.getElementById('sName').value = s.name || '';
+    document.getElementById('sDesc').value = s.description || '';
+    document.getElementById('sSource').value = s.source || '';
+    const om = document.getElementById('sObfMode');
+    if (om) om.value = s.obfMode || (s.doObfuscate === false ? 'none' : 'qrex');
+    document.getElementById('createTitle').textContent = 'Edit Script';
+    document.getElementById('createSubtitle').textContent = 'Modificando · ' + (s.name || id);
+    document.getElementById('createBtnLabel').textContent = 'Save changes';
+    document.getElementById('createOutWrap').classList.add('hidden');
+    updateLines();
+    go('create');
+    toast('Script cargado para editar');
+  } catch(e) {
+    toast(e.message || 'Error', 'err');
+  }
+}
+
+function resetCreateForm(){
+  editingId = null;
+  document.getElementById('editId').value = '';
+  document.getElementById('sName').value = '';
+  document.getElementById('sDesc').value = '';
+  document.getElementById('sSource').value = '';
+  document.getElementById('createTitle').textContent = 'Create Script';
+  document.getElementById('createSubtitle').textContent = 'Create or modify Lua script';
+  document.getElementById('createBtnLabel').textContent = 'Create';
+  document.getElementById('createOutWrap').classList.add('hidden');
+  const om2 = document.getElementById('sObfMode'); if (om2) om2.value = 'qrex';
+  updateLines();
+}
+
+async function createScript(){
+  const name = document.getElementById('sName').value.trim();
+  const description = document.getElementById('sDesc').value.trim();
+  const source = document.getElementById('sSource').value;
+  const btn = document.getElementById('createBtn');
+  const out = document.getElementById('createOut');
+  const wrap = document.getElementById('createOutWrap');
+  const editId = document.getElementById('editId').value || editingId;
+  if (!name || !source) { wrap.classList.remove('hidden'); out.value = 'Name y source son obligatorios'; return; }
+  btn.disabled = true;
+  const prev = document.getElementById('createBtnLabel').textContent;
+  document.getElementById('createBtnLabel').textContent = editId ? 'Saving...' : 'Creating...';
+  try {
+    let r, d;
+    if (editId) {
+      r = await fetch('/api/scripts/' + editId, {
+        method: 'PUT', headers: headers(),
+        body: JSON.stringify({ name, description, source, obfMode: (document.getElementById('sObfMode')||{}).value || 'qrex', keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
+      });
+      d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Error al guardar');
+      toast('Script actualizado');
+      wrap.classList.remove('hidden');
+      const host = location.origin;
+      out.value = 'loadstring(game:HttpGet("'+host+'/api/raw/'+editId+'"))()';
+      const prefCopy = document.getElementById('prefCopy');
+      if (prefCopy && prefCopy.checked) { try { navigator.clipboard.writeText(out.value); } catch {} }
+      resetCreateForm();
+      loadScripts(); loadStats();
+      go('scripts');
+    } else {
+      r = await fetch('/api/scripts', {
+        method:'POST', headers: headers(),
+        body: JSON.stringify({ name, description, source, obfMode: (document.getElementById('sObfMode')||{}).value || 'qrex', keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
+      });
+      d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Error');
+      wrap.classList.remove('hidden');
+      out.value = d.loadstring || JSON.stringify(d);
+      const prefCopy = document.getElementById('prefCopy');
+      if (prefCopy && prefCopy.checked && d.loadstring) {
+        try { navigator.clipboard.writeText(d.loadstring); } catch {}
+      }
+      toast('Script creado');
+      document.getElementById('sName').value = '';
+      document.getElementById('sDesc').value = '';
+      document.getElementById('sSource').value = '';
+      updateLines();
+      loadScripts(); loadStats();
+    }
+  } catch(e) {
+    wrap.classList.remove('hidden');
+    out.value = 'Error: ' + e.message;
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    document.getElementById('createBtnLabel').textContent = prev === 'Saving...' || prev === 'Creating...' ? (editId ? 'Save changes' : 'Create') : prev;
+    if (!editId) document.getElementById('createBtnLabel').textContent = 'Create';
+  }
+}
+
+async function delScript(id){
+  if (!confirm('¿Eliminar este script de forma permanente?')) return;
+  try {
+    const r = await fetch('/api/scripts/' + id, { method: 'DELETE', headers: headers() });
+    if (!r.ok) throw new Error('No se pudo eliminar');
+    toast('Script eliminado');
+    loadScripts(); loadStats(); loadAnalytics();
+  } catch(e) {
+    toast(e.message || 'Error', 'err');
+  }
+}
+
+
+let hubAll = [];
+
+async function loadHub(){
+  try {
+    const r = await fetch('/api/hub');
+    if (!r.ok) return;
+    hubAll = await r.json();
+    filterHub();
+    await fillHubSelect();
+  } catch(e) { console.error(e); }
+}
+
+function filterHub(){
+  const q = (document.getElementById('hubSearch')?.value || '').toLowerCase().trim();
+  const list = q ? hubAll.filter(h => (h.name||'').toLowerCase().includes(q) || (h.ownerUsername||'').toLowerCase().includes(q) || (h.description||'').toLowerCase().includes(q)) : hubAll;
+  renderHub(list);
+}
+
+function renderHub(list){
+  const el = document.getElementById('hubList');
+  if (!el) return;
+  if (!list.length) {
+    el.innerHTML = '<div class="card empty-state"><div class="text-sm">No hay scripts públicos todavía</div><div class="text-xs mt-2">Publica el tuyo cuando tenga 500+ ejecuciones</div></div>';
+    return;
+  }
+  el.innerHTML = list.map(h => {
+    const id = h._id || h.id;
+    const mine = false; // filled below with data attr
+    return '<div class="card p-5" data-hub-id="'+esc(id)+'">'+
+      '<div class="flex justify-between items-start gap-3 mb-3">'+
+        '<div class="min-w-0">'+
+          '<div class="font-semibold" style="color:#c4b5fd">'+esc(h.name)+'</div>'+
+          '<div class="text-xs mt-0.5" style="color:#5a5a6e">'+esc(h.description||'')+'</div>'+
+          '<div class="flex flex-wrap gap-2 mt-2">'+
+            '<span class="chip">@'+esc(h.ownerUsername||'user')+'</span>'+
+            '<span class="chip">'+(h.executionsAtPublish||0)+' runs al publicar</span>'+
+            '<span class="chip">'+(h.views||0)+' views</span>'+
+          '</div>'+
+        '</div>'+
+        '<div class="script-actions">'+
+          '<button class="icon-btn" title="Copiar loadstring" onclick="copyHubLs(\''+id+'\',\''+ (h.loadstring||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'") +'\')">'+
+            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>'+
+          '</button>'+
+          '<button class="icon-btn danger hub-del" data-owner="'+esc(h.ownerId||'')+'" title="Quitar del hub" onclick="delHub(\''+id+'\')" style="display:none">'+
+            '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>'+
+          '</button>'+
+        '</div>'+
+      '</div>'+
+      '<pre class="text-[11px] overflow-x-auto whitespace-pre-wrap break-all p-3 rounded-lg" style="background:#0c0c12;color:#5a5a6e">'+esc(h.loadstring)+'</pre>'+
+    '</div>';
+  }).join('');
+  // show delete for own items
+  try {
+    const payload = JSON.parse(atob((token.split('.')[1]||'').replace(/-/g,'+').replace(/_/g,'/')));
+    const uid = payload.sub;
+    document.querySelectorAll('.hub-del').forEach(btn => {
+      if (btn.getAttribute('data-owner') === uid) btn.style.display = 'inline-flex';
+    });
+  } catch {}
+}
+
+function copyHubLs(id, ls){
+  copyLs(ls);
+  fetch('/api/hub/'+id+'/view', { method:'POST' }).catch(()=>{});
+}
+
+async function fillHubSelect(){
+  const sel = document.getElementById('hubScriptSelect');
+  if (!sel) return;
+  try {
+    const r = await fetch('/api/scripts', { headers: headers() });
+    if (!r.ok) return;
+    const list = await r.json();
+    const prem = !!(currentUser && currentUser.premium);
+    const ok = prem ? list : list.filter(s => (s.executions||0) >= 500);
+    if (!ok.length) {
+      sel.innerHTML = prem
+        ? '<option value="">No tienes scripts</option>'
+        : '<option value="">Ningún script con 500+ runs (o activa Premium)</option>';
+      return;
+    }
+    sel.innerHTML = ok.map(s => '<option value="'+s.id+'">'+esc(s.name)+' ('+(s.executions||0)+' runs)'+(prem && (s.executions||0)<500 ? ' · Premium' : '')+'</option>').join('');
+    const first = ok[0];
+    if (first && !document.getElementById('hubName').value) {
+      document.getElementById('hubName').value = first.name || '';
+    }
+  } catch {}
+}
+
+async function loadAdmin(){
+  if (!currentUser || currentUser.role !== 'admin') { toast('Solo admin', 'err'); return; }
+  try {
+    const st = await fetch('/api/admin/stats', { headers: headers() }).then(r=>r.json());
+    document.getElementById('aUsers').textContent = st.users ?? '—';
+    document.getElementById('aScripts').textContent = st.scripts ?? '—';
+    document.getElementById('aHub').textContent = st.hub ?? '—';
+    document.getElementById('aPrem').textContent = st.premium ?? '—';
+  } catch {}
+  try {
+    const users = await fetch('/api/admin/users', { headers: headers() }).then(r=>r.json());
+    document.getElementById('adminUsers').innerHTML = (users||[]).map(u =>
+      '<tr><td>@'+esc(u.username)+'</td><td>'+esc(u.role)+'</td><td style="color:'+(u.premium?'#fbbf24':'#5a5a6e')+'">'+(u.premium?'Yes':'No')+'</td><td style="color:#5a5a6e">'+(u.createdAt?new Date(u.createdAt).toLocaleDateString():'-')+'</td></tr>'
+    ).join('') || '<tr><td colspan="4" class="text-center py-6" style="color:#5a5a6e">Sin usuarios</td></tr>';
+  } catch {}
+  loadAdminScripts();
+  loadAdminBlacklist();
+  try {
+    const hub = await fetch('/api/hub').then(r=>r.json());
+    document.getElementById('adminHub').innerHTML = (hub||[]).map(h => {
+      const id = h._id || h.id;
+      return '<tr><td>'+esc(h.name)+'</td><td>@'+esc(h.ownerUsername)+'</td><td>'+(h.views||0)+'</td><td><button class="btn-ghost text-xs" style="color:#f87171;border-color:#3a1a1a" onclick="adminDelHub(\''+id+'\')">Eliminar</button></td></tr>';
+    }).join('') || '<tr><td colspan="4" class="text-center py-6" style="color:#5a5a6e">Vacío</td></tr>';
+  } catch {}
+}
+
+async function loadAdminScripts(){
+  try {
+    const list = await fetch('/api/admin/scripts', { headers: headers() }).then(r=>r.json());
+    document.getElementById('adminScripts').innerHTML = (list||[]).map(s =>
+      '<tr><td>'+esc(s.name)+'</td><td style="color:#5a5a6e;font-size:11px">'+esc((s.ownerId||'').slice(0,8))+'…</td><td>'+(s.executions||0)+'</td><td><button class="btn-ghost text-xs" style="color:#f87171;border-color:#3a1a1a" onclick="adminDelScript(\''+s.id+'\')">Eliminar</button></td></tr>'
+    ).join('') || '<tr><td colspan="4" class="text-center py-6" style="color:#5a5a6e">Vacío</td></tr>';
+  } catch {}
+}
+
+async function adminSetPremium(on){
+  const username = document.getElementById('premUser').value.trim();
+  const days = document.getElementById('premDays').value || 30;
+  if (!username) { toast('Pon username', 'err'); return; }
+  try {
+    const r = await fetch('/api/admin/premium', {
+      method:'POST', headers: headers(),
+      body: JSON.stringify({ username, premium: on, days: Number(days) })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    toast(on ? ('Premium activado: @'+username) : ('Premium quitado: @'+username));
+    loadAdmin();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function adminDelScript(id){
+  if (!confirm('¿Eliminar este script del sistema?')) return;
+  try {
+    const r = await fetch('/api/admin/scripts/'+id, { method:'DELETE', headers: headers() });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Error');
+    toast('Script eliminado');
+    loadAdminScripts();
+  } catch(e) { toast(e.message,'err'); }
+}
+
+async function adminDelHub(id){
+  if (!confirm('¿Quitar del hub?')) return;
+  try {
+    const r = await fetch('/api/admin/hub/'+id, { method:'DELETE', headers: headers() });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Error');
+    toast('Quitado del hub');
+    loadAdmin();
+  } catch(e) { toast(e.message,'err'); }
+}
+
+
+async function publishHub(){
+  const scriptId = document.getElementById('hubScriptSelect').value;
+  const name = document.getElementById('hubName').value.trim();
+  const description = document.getElementById('hubDesc').value.trim();
+  const err = document.getElementById('hubErr');
+  const btn = document.getElementById('hubPublishBtn');
+  err.classList.add('hidden');
+  if (!scriptId) { err.textContent = 'Selecciona un script con 500+ ejecuciones'; err.classList.remove('hidden'); return; }
+  if (!name) { err.textContent = 'Pon un nombre'; err.classList.remove('hidden'); return; }
+  btn.disabled = true; btn.textContent = 'Publicando...';
+  try {
+    const r = await fetch('/api/hub', {
+      method:'POST', headers: headers(),
+      body: JSON.stringify({ scriptId, name, description })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    toast('Publicado en el Hub');
+    document.getElementById('hubPublishCard').classList.add('hidden');
+    document.getElementById('hubName').value = '';
+    document.getElementById('hubDesc').value = '';
+    loadHub();
+  } catch(e) {
+    err.textContent = e.message;
+    err.classList.remove('hidden');
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Publicar';
+  }
+}
+
+async function delHub(id){
+  if (!confirm('¿Quitar este script del Hub público?')) return;
+  try {
+    const r = await fetch('/api/hub/'+id, { method:'DELETE', headers: headers() });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    toast('Eliminado del Hub');
+    loadHub();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+
+async function loadKeysPage(){
+  await loadProviders();
+  await loadKeysTable();
+  updateLoaderSnippet();
+}
+
+async function loadProviders(){
+  try {
+    const r = await fetch('/api/providers', { headers: headers() });
+    if (!r.ok) return;
+    const list = await r.json();
+    const el = document.getElementById('provList');
+    const sel = document.getElementById('keyProvSelect');
+    if (!list.length) {
+      el.innerHTML = '<div style="color:#5a5a6e">No hay providers. Crea uno.</div>';
+      sel.innerHTML = '<option value="">—</option>';
+      return;
+    }
+    el.innerHTML = list.map(p =>
+      '<div class="flex justify-between items-center py-2 border-b" style="border-color:#1a1a24">'+
+        '<div><span class="font-medium" style="color:#c4b5fd">'+esc(p.name)+'</span>'+
+        '<div class="text-xs" style="color:#5a5a6e">'+p.keyValidityHours+'h · HWID '+p.hwidLimit+(p.enabled===false?' · OFF':'')+'</div></div>'+
+        '<button class="icon-btn danger" title="Eliminar" onclick="delProvider(\''+p._id+'\')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>'+
+      '</div>'
+    ).join('');
+    sel.innerHTML = list.map(p => '<option value="'+p._id+'">'+esc(p.name)+'</option>').join('');
+  } catch(e) { console.error(e); }
+}
+
+async function createProvider(){
+  const name = document.getElementById('provName').value.trim();
+  const keyValidityHours = document.getElementById('provHours').value;
+  const hwidLimit = document.getElementById('provHwid').value;
+  try {
+    const r = await fetch('/api/providers', {
+      method:'POST', headers: headers(),
+      body: JSON.stringify({ name, keyValidityHours, hwidLimit })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    toast('Provider creado');
+    document.getElementById('provName').value = '';
+    document.getElementById('provCard').classList.add('hidden');
+    loadProviders();
+    updateLoaderSnippet();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function delProvider(id){
+  if (!confirm('¿Eliminar provider y sus keys?')) return;
+  await fetch('/api/providers/'+id, { method:'DELETE', headers: headers() });
+  toast('Provider eliminado');
+  loadKeysPage();
+}
+
+async function generateKeys(){
+  const providerId = document.getElementById('keyProvSelect').value;
+  const amount = document.getElementById('keyAmount').value;
+  const validityHours = document.getElementById('keyHours').value;
+  const hwidLimit = document.getElementById('keyHwidLim').value;
+  const note = document.getElementById('keyNote').value;
+  if (!providerId) { toast('Elige provider', 'err'); return; }
+  try {
+    const r = await fetch('/api/keys', {
+      method:'POST', headers: headers(),
+      body: JSON.stringify({ providerId, amount, validityHours: Number(validityHours), hwidLimit, note })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    const keys = (d.keys || []).map(k => k.key).join('\n');
+    const out = document.getElementById('keyGenOut');
+    out.classList.remove('hidden');
+    out.value = keys;
+    toast((d.keys||[]).length + ' key(s) generadas');
+    loadKeysTable();
+  } catch(e) { toast(e.message, 'err'); }
+}
+
+async function loadKeysTable(){
+  try {
+    const r = await fetch('/api/keys', { headers: headers() });
+    if (!r.ok) return;
+    const list = await r.json();
+    const tb = document.getElementById('keysTable');
+    if (!list.length) {
+      tb.innerHTML = '<tr><td colspan="6" class="text-center py-8" style="color:#5a5a6e">Sin keys</td></tr>';
+      return;
+    }
+    tb.innerHTML = list.map(k => {
+      const exp = k.expiresAt ? new Date(k.expiresAt).toLocaleString() : '∞';
+      const hw = (k.hwids||[]).length + '/' + (k.hwidLimit||1);
+      const off = k.enabled === false;
+      return '<tr style="'+(off?'opacity:.5':'')+'">'+
+        '<td class="font-mono text-xs">'+esc(k.key)+' <button class="btn-ghost text-[10px] ml-1" onclick="copyLs(\''+k.key+'\')">copy</button></td>'+
+        '<td>'+esc(k.providerName)+'</td>'+
+        '<td>'+hw+'</td>'+
+        '<td class="text-xs" style="color:#8b8b9e">'+esc(exp)+'</td>'+
+        '<td>'+(k.uses||0)+'</td>'+
+        '<td class="script-actions">'+
+          '<button class="icon-btn" title="Reset HWID" onclick="resetHwid(\''+k._id+'\')">↺</button>'+
+          '<button class="icon-btn" title="On/Off" onclick="toggleKey(\''+k._id+'\')">'+(off?'ON':'OFF')+'</button>'+
+          '<button class="icon-btn danger" onclick="delKey(\''+k._id+'\')">×</button>'+
+        '</td></tr>';
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function resetHwid(id){
+  await fetch('/api/keys/'+id+'/reset-hwid', { method:'POST', headers: headers() });
+  toast('HWID reseteado');
+  loadKeysTable();
+}
+async function toggleKey(id){
+  await fetch('/api/keys/'+id+'/toggle', { method:'POST', headers: headers() });
+  loadKeysTable();
+}
+async function delKey(id){
+  if (!confirm('¿Borrar key?')) return;
+  await fetch('/api/keys/'+id, { method:'DELETE', headers: headers() });
+  toast('Key eliminada');
+  loadKeysTable();
+}
+
+function updateLoaderSnippet(){
+  const base = location.origin;
+  const sel = document.getElementById('keyProvSelect');
+  const provName = sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : 'MyProvider';
+  const snip = `-- QrexApi Key Loader
+local HttpService = game:GetService("HttpService")
+local cfg = {
+  api = "${base}",
+  provider = "${provName.replace(/"/g, '')}",
+}
+local function getHwid()
+  local ok, id = pcall(function()
+    return game:GetService("RbxAnalyticsService"):GetClientId()
+  end)
+  return ok and id or tostring(game.Players.LocalPlayer.UserId)
+end
+local function verify(key)
+  local body = HttpService:JSONEncode({ key = key, hwid = getHwid(), provider = cfg.provider })
+  local res = request({
+    Url = cfg.api .. "/api/keys/verify",
+    Method = "POST",
+    Headers = { ["Content-Type"] = "application/json" },
+    Body = body
+  })
+  if not res or not res.Body then return false end
+  local ok, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
+  return ok and data and data.success
+end
+-- Ejemplo:
+-- if verify("TU-KEY-AQUI") then
+--   print("OK")
+--   -- load tu script
+-- else
+--   warn("Key inválida")
+-- end`
+  const el = document.getElementById('loaderSnippet');
+  if (el) el.textContent = snip;
+}
+
+
+function setTheme(cls){
+  document.body.classList.remove('theme-neon','theme-cyber','theme-blood','theme-matrix','theme-neonblue');
+  if (cls) document.body.classList.add(cls);
+  localStorage.setItem('qrex_theme', cls || '');
+}
+(function(){ const t = localStorage.getItem('qrex_theme'); if (t) setTheme(t); })();
+
+async function fillCreateProviders(){
+  const sel = document.getElementById('sProvider');
+  if (!sel) return;
+  try {
+    const r = await fetch('/api/providers', { headers: headers() });
+    if (!r.ok) return;
+    const list = await r.json();
+    sel.innerHTML = list.length ? list.map(p => '<option value="'+p._id+'">'+esc(p.name)+'</option>').join('') : '<option value="">Sin providers</option>';
+  } catch {}
+}
+
+// patch createScript body to include keyMode - replace fetch body in create
+async function loadWebhooks(){
+  try {
+    const list = await fetch('/api/webhooks', { headers: headers() }).then(r=>r.json());
+    document.getElementById('whList').innerHTML = (list||[]).map(w =>
+      '<div class="card p-4 flex justify-between gap-2"><div class="text-xs break-all">'+esc(w.url)+'<div style="color:#5a5a6e">'+(w.events||[]).join(', ')+'</div></div><button class="icon-btn danger" onclick="delWebhook(\''+w._id+'\')">×</button></div>'
+    ).join('') || '<div class="text-sm" style="color:#5a5a6e">Sin webhooks</div>';
+  } catch {}
+}
+async function addWebhook(){
+  const url = document.getElementById('whUrl').value.trim();
+  try {
+    const r = await fetch('/api/webhooks', { method:'POST', headers: headers(), body: JSON.stringify({ url }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Error');
+    toast('Webhook añadido'); document.getElementById('whUrl').value=''; loadWebhooks();
+  } catch(e){ toast(e.message,'err'); }
+}
+async function testWebhook(){
+  const url = document.getElementById('whUrl').value.trim();
+  try {
+    const r = await fetch('/api/webhooks/test', { method:'POST', headers: headers(), body: JSON.stringify({ url }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Error');
+    toast(d.ok ? 'Test OK' : 'HTTP '+d.status);
+  } catch(e){ toast(e.message,'err'); }
+}
+async function delWebhook(id){
+  await fetch('/api/webhooks/'+id, { method:'DELETE', headers: headers() });
+  loadWebhooks();
+}
+
+async function loadLeaderboard(){
+  try {
+    const list = await fetch('/api/leaderboard').then(r=>r.json());
+    document.getElementById('lbTable').innerHTML = (list||[]).map(r =>
+      '<tr><td style="color:#a78bfa">#'+r.rank+'</td><td>@'+esc(r.username)+(r.premium?' <span style="color:#fbbf24">VIP</span>':'')+'</td><td>'+r.scripts+'</td><td style="color:#c4b5fd">'+r.executions+'</td></tr>'
+    ).join('') || '<tr><td colspan="4" class="text-center py-6" style="color:#5a5a6e">Sin datos</td></tr>';
+  } catch {}
+}
+
+async function loadAssets(){
+  try {
+    const list = await fetch('/api/assets', { headers: headers() }).then(r=>r.json());
+    document.getElementById('assetList').innerHTML = (list||[]).map(a =>
+      '<div class="card p-4"><div class="flex justify-between"><div class="font-medium" style="color:#c4b5fd">'+esc(a.name)+'</div><button class="icon-btn danger" onclick="delAsset(\''+a._id+'\')">×</button></div><div class="text-xs mt-1" style="color:#5a5a6e">'+esc(a.type)+'</div><pre class="text-[11px] mt-2 overflow-auto" style="color:#8b8b9e;max-height:80px">'+esc((a.content||'').slice(0,300))+'</pre><button class="btn-ghost text-xs mt-2" onclick="copyLs('+JSON.stringify(a.content||'')+')">Copiar</button></div>'
+    ).join('') || '<div style="color:#5a5a6e">Sin assets</div>';
+  } catch {}
+}
+async function addAsset(){
+  const name = document.getElementById('assetName').value.trim();
+  const type = document.getElementById('assetType').value;
+  const content = document.getElementById('assetContent').value;
+  try {
+    const r = await fetch('/api/assets', { method:'POST', headers: headers(), body: JSON.stringify({ name, type, content }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Error');
+    toast('Asset guardado'); loadAssets();
+  } catch(e){ toast(e.message,'err'); }
+}
+async function delAsset(id){
+  await fetch('/api/assets/'+id, { method:'DELETE', headers: headers() });
+  loadAssets();
+}
+
+const TEMPLATES = [
+  { name: 'UI Base', desc: 'ScreenGui simple', code: 'local sg=Instance.new("ScreenGui",game.CoreGui)\\nlocal f=Instance.new("Frame",sg)\\nf.Size=UDim2.fromOffset(300,200)\\nf.Position=UDim2.fromScale(0.5,0.5)\\nf.AnchorPoint=Vector2.new(0.5,0.5)\\nf.BackgroundColor3=Color3.fromRGB(20,20,30)' },
+  { name: 'Notification', desc: 'Notify básico', code: 'local function notify(t,c)\\n  game:GetService("StarterGui"):SetCore("SendNotification",{Title=t,Text=c,Duration=3})\\nend\\nnotify("Qrex","Hola")' },
+  { name: 'HTTP Get', desc: 'Request helper', code: 'local function httpget(url)\\n  return game:HttpGet(url)\\nend\\nprint(httpget("https://example.com"))' },
+  { name: 'Key check (Qrex)', desc: 'Verificar key', code: '-- usa el loader de Key System en el panel' },
+  { name: 'ESP skeleton', desc: 'Base ESP', code: '-- ESP base\\nfor _,plr in ipairs(game.Players:GetPlayers()) do\\n  if plr~=game.Players.LocalPlayer and plr.Character then\\n    -- drawing here\\n  end\\nend' },
+  { name: 'Auto farm stub', desc: 'Loop farm', code: 'while task.wait(1) do\\n  -- farm logic\\npcall(function()\\n  end)\\nend' },
+];
+
+function renderTemplates(){
+  const el = document.getElementById('tplList');
+  if (!el) return;
+  el.innerHTML = TEMPLATES.map((t,i) =>
+    '<div class="card p-5"><div class="font-semibold" style="color:#c4b5fd">'+esc(t.name)+'</div><div class="text-xs mb-2" style="color:#5a5a6e">'+esc(t.desc)+'</div><pre class="text-[11px] p-2 rounded" style="background:#0c0c12;color:#8b8b9e">'+esc(t.code)+'</pre><div class="flex gap-2 mt-2"><button class="btn-ghost text-xs" onclick="copyLs(TEMPLATES['+i+'].code)">Copiar</button><button class="btn-primary text-xs" onclick="useTemplate('+i+')">Usar en Create</button></div></div>'
+  ).join('');
+}
+function useTemplate(i){
+  resetCreateForm();
+  document.getElementById('sSource').value = TEMPLATES[i].code;
+  document.getElementById('sName').value = TEMPLATES[i].name;
+  updateLines();
+  go('create');
+  toast('Template cargado');
+}
+// render on load
+setTimeout(renderTemplates, 0);
+
+async function loadStatus(){
+  try {
+    const d = await fetch('/api/status').then(r=>r.json());
+    document.getElementById('stApi').innerHTML = '<span style="color:#34d399">Online</span>';
+    document.getElementById('stMongo').innerHTML = d.mongo ? '<span style="color:#34d399">Connected</span>' : '<span style="color:#f87171">Down</span>';
+    document.getElementById('stPing').textContent = d.mongoPingMs != null ? d.mongoPingMs + ' ms' : '—';
+    document.getElementById('stUptime').textContent = 'Uptime: ' + Math.floor((d.uptime||0)/60) + ' min · Limit free scripts: ' + (d.freeScriptLimit||15);
+  } catch {
+    document.getElementById('stApi').innerHTML = '<span style="color:#f87171">Offline</span>';
+  }
+}
+
+async function runPlayground(){
+  const method = document.getElementById('pgMethod').value;
+  let path = document.getElementById('pgPath').value.trim() || '/api/health';
+  if (!path.startsWith('/')) path = '/' + path;
+  const useAuth = document.getElementById('pgAuth').checked;
+  const bodyRaw = document.getElementById('pgBody').value.trim();
+  const opts = { method, headers: {} };
+  if (useAuth && token) opts.headers['Authorization'] = 'Bearer ' + token;
+  if (bodyRaw && method !== 'GET') {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = bodyRaw;
+  }
+  try {
+    const r = await fetch(path, opts);
+    const t = await r.text();
+    document.getElementById('pgOut').textContent = 'HTTP ' + r.status + '\n\n' + t;
+  } catch(e) {
+    document.getElementById('pgOut').textContent = e.message;
+  }
+}
+
+async function adminAddBlacklist(){
+  const ip = document.getElementById('blIp').value.trim();
+  const reason = document.getElementById('blReason').value.trim();
+  try {
+    const r = await fetch('/api/admin/blacklist', { method:'POST', headers: headers(), body: JSON.stringify({ ip, reason }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Error');
+    toast('IP baneada'); loadAdminBlacklist();
+  } catch(e){ toast(e.message,'err'); }
+}
+async function loadAdminBlacklist(){
+  try {
+    const list = await fetch('/api/admin/blacklist', { headers: headers() }).then(r=>r.json());
+    document.getElementById('adminBlacklist').innerHTML = (list||[]).map(b =>
+      '<div class="flex justify-between py-1"><span>'+esc(b.ip)+' — '+esc(b.reason||'')+'</span><button class="btn-ghost text-[10px]" onclick="adminDelBl(\''+b._id+'\')">x</button></div>'
+    ).join('') || 'Vacío';
+  } catch {}
+}
+async function adminDelBl(id){
+  await fetch('/api/admin/blacklist/'+id, { method:'DELETE', headers: headers() });
+  loadAdminBlacklist();
+}
+
+// versions UI helper
+async function showVersions(scriptId){
+  try {
+    const list = await fetch('/api/scripts/'+scriptId+'/versions', { headers: headers() }).then(r=>r.json());
+    if (!list.length) { toast('Sin versiones guardadas'); return; }
+    const pick = list.map((v,i)=> (i+1)+'. '+(v.createdAt?new Date(v.createdAt).toLocaleString():v._id)).join('\n');
+    const n = prompt('Versiones (número a restaurar):\n'+pick, '1');
+    const idx = Number(n)-1;
+    if (idx<0 || idx>=list.length) return;
+    const r = await fetch('/api/scripts/'+scriptId+'/versions/'+list[idx]._id+'/restore', { method:'POST', headers: headers() });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Error');
+    toast('Versión restaurada');
+    loadScripts();
+  } catch(e){ toast(e.message,'err'); }
+}
+
+function updateStudioLines(){
+  const src = document.getElementById('studioSource');
+  const nums = document.getElementById('studioLineNums');
+  if (!src || !nums) return;
+  const n = Math.max(1, src.value.split('\n').length);
+  let o = '';
+  for (let i=1;i<=n;i++) o += i + '\n';
+  nums.textContent = o;
+  nums.scrollTop = src.scrollTop;
+  const st = document.getElementById('studioStats2');
+  if (st) st.textContent = n + ' líneas · ' + src.value.length + ' chars';
+  const off = src.selectionStart || 0;
+  const before = src.value.slice(0, off);
+  const ln = before.split('\n').length;
+  const col = before.length - before.lastIndexOf('\n');
+  const pos = document.getElementById('studioPos2');
+  if (pos) pos.textContent = 'Ln ' + ln + ', Col ' + col;
+}
+function studioKey2(e){
+  const src = document.getElementById('studioSource');
+  if (!src) return;
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const s = src.selectionStart;
+    src.value = src.value.slice(0,s) + '  ' + src.value.slice(src.selectionEnd);
+    src.selectionStart = src.selectionEnd = s + 2;
+    updateStudioLines();
+  }
+  setTimeout(updateStudioLines, 0);
+}
+function studioComment2(){
+  const src = document.getElementById('studioSource');
+  if (!src) return;
+  const lineStart = src.value.lastIndexOf('\n', (src.selectionStart||0)-1) + 1;
+  src.value = src.value.slice(0,lineStart) + '-- ' + src.value.slice(lineStart);
+  updateStudioLines();
+}
+function studioFormat2(){
+  const src = document.getElementById('studioSource');
+  if (!src) return;
+  let ind = 0;
+  const openers = /\b(function|then|do|repeat)\b/;
+  const closers = /\b(end|until|else|elseif)\b/;
+  src.value = src.value.split('\n').map(line => {
+    const t = line.trim();
+    if (!t) return '';
+    if (closers.test(t) && !/\bthen\b/.test(t)) ind = Math.max(0, ind-1);
+    const r = '  '.repeat(ind) + t;
+    if (openers.test(t) && !t.includes('end')) ind++;
+    return r;
+  }).join('\n');
+  updateStudioLines();
+  toast('Formato OK');
+}
+function studioDownload2(){
+  const src = document.getElementById('studioSource');
+  const blob = new Blob([src.value], {type:'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'studio.lua';
+  a.click();
+}
+function uploadStudio(input){
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { document.getElementById('studioSource').value = r.result; updateStudioLines(); };
+  r.readAsText(f);
+  input.value = '';
+}
+function studioToCreate(){
+  const code = document.getElementById('studioSource').value;
+  resetCreateForm();
+  document.getElementById('sSource').value = code;
+  go('create');
+  toast('Código enviado a Create Script');
+}
+async function runAiGenerate(){
+  const input = document.getElementById('aiPrompt');
+  const q = (input?.value || '').trim();
+  if (!q) { toast('Escribe un prompt', 'err'); return; }
+  const src = document.getElementById('studioSource');
+  if (!src) return;
+  const prev = src.value;
+  src.value = '-- Generando con IA...\n-- ' + q + '\n';
+  updateStudioLines();
+  toast('IA pensando...');
+  try {
+    const r = await fetch('/api/ai/generate', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ prompt: q })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error IA');
+    src.value = d.code || prev;
+    updateStudioLines();
+    toast('Código generado' + (d.model ? ' · ' + d.model : ''));
+  } catch (e) {
+    src.value = prev;
+    updateStudioLines();
+    toast(e.message || 'Error IA', 'err');
+  }
+}
+
+
+async function loadCloudUI(){
+  try {
+    const list = await fetch('/api/cloud-ui', { headers: headers() }).then(r=>r.json());
+    const host = location.origin;
+    document.getElementById('cuiList').innerHTML = (list||[]).map(u =>
+      '<div class="card p-4"><div class="font-semibold" style="color:#c4b5fd">'+esc(u.name)+'</div><div class="text-xs" style="color:#5a5a6e">'+esc(u.description||'')+' · '+(u.downloads||0)+' downloads</div><pre class="text-[10px] mt-2 overflow-auto" style="color:#5a5a6e">loadstring(game:HttpGet("'+host+'/api/cloud-ui/raw/'+u.id+'"))()</pre><button class="btn-ghost text-xs mt-2" onclick="copyLs(\'loadstring(game:HttpGet("'+host+'/api/cloud-ui/raw/'+u.id+'"))()\')">Copiar</button> <button class="btn-ghost text-xs" style="color:#f87171" onclick="delCloudUI(\''+u.id+'\')">Borrar</button></div>'
+    ).join('') || '<div style="color:#5a5a6e">Vacío</div>';
+  } catch(e) {}
+}
+async function saveCloudUI(){
+  const name = document.getElementById('cuiName').value.trim();
+  const description = document.getElementById('cuiDesc').value.trim();
+  const code = document.getElementById('cuiCode').value;
+  try {
+    const r = await fetch('/api/cloud-ui', { method:'POST', headers: headers(), body: JSON.stringify({ name, description, code }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Error');
+    toast('UI subida'); loadCloudUI();
+  } catch(e) { toast(e.message,'err'); }
+}
+async function delCloudUI(id){
+  await fetch('/api/cloud-ui/'+id, { method:'DELETE', headers: headers() });
+  loadCloudUI();
+}
+
+async function loadAlerts(){
+  try {
+    const list = await fetch('/api/alerts', { headers: headers() }).then(r=>r.json());
+    document.getElementById('alList').innerHTML = (list||[]).map(a =>
+      '<div class="card p-3 flex justify-between"><div><b>'+esc(a.title)+'</b><div class="text-xs" style="color:#8b8b9e">'+esc(a.message)+'</div></div><button class="icon-btn danger" onclick="delAlert(\''+a._id+'\')">×</button></div>'
+    ).join('') || '<div style="color:#5a5a6e">Sin alertas</div>';
+    const uid = currentUser && currentUser.id;
+    document.getElementById('alSnippet').textContent =
+'-- Poll remote alerts\\nlocal HttpService = game:GetService("HttpService")\\nlocal ownerId = "'+(uid||'YOUR_USER_ID')+'"\\nlocal function poll()\\n  local ok, body = pcall(function()\\n    return game:HttpGet("' + location.origin + '/api/alerts/poll?owner="..ownerId)\\n  end)\\n  if ok and body then\\n    local data = HttpService:JSONDecode(body)\\n    for _,a in ipairs(data) do\\n      pcall(function()\\n        game:GetService("StarterGui"):SetCore("SendNotification",{Title=a.title,Text=a.message,Duration=5})\\n      end)\\n    end\\n  end\\nend\\ntask.spawn(function() while task.wait(30) do poll() end end)';
+  } catch(e) {}
+}
+async function sendAlert(){
+  try {
+    const r = await fetch('/api/alerts', { method:'POST', headers: headers(), body: JSON.stringify({
+      title: document.getElementById('alTitle').value,
+      message: document.getElementById('alMsg').value,
+      hours: document.getElementById('alHours').value
+    })});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Error');
+    toast('Alerta enviada'); loadAlerts();
+  } catch(e) { toast(e.message,'err'); }
+}
+async function delAlert(id){
+  await fetch('/api/alerts/'+id, { method:'DELETE', headers: headers() });
+  loadAlerts();
+}
+
+async function loadPromos(){
+  try {
+    const list = await fetch('/api/promos', { headers: headers() }).then(r=>r.json());
+    document.getElementById('promoList').innerHTML = (list||[]).map(p =>
+      '<div class="card p-3 flex justify-between"><div><b>'+esc(p.code)+'</b> +'+p.extraHours+'h · '+p.uses+'/'+p.maxUses+'</div><button class="icon-btn danger" onclick="delPromo(\''+p._id+'\')">×</button></div>'
+    ).join('') || '';
+    const provs = await fetch('/api/providers', { headers: headers() }).then(r=>r.json());
+    document.getElementById('gkProv').innerHTML = (provs||[]).map(p=>'<option value="'+p._id+'">'+esc(p.name)+'</option>').join('') || '<option value="">Sin providers</option>';
+  } catch(e) {}
+}
+async function createPromo(){
+  try {
+    const r = await fetch('/api/promos', { method:'POST', headers: headers(), body: JSON.stringify({
+      code: document.getElementById('promoCode').value,
+      extraHours: document.getElementById('promoHours').value,
+      maxUses: document.getElementById('promoMax').value
+    })});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Error');
+    toast('Cupón creado'); loadPromos();
+  } catch(e) { toast(e.message,'err'); }
+}
+async function delPromo(id){
+  await fetch('/api/promos/'+id, { method:'DELETE', headers: headers() });
+  loadPromos();
+}
+async function genGetKey(){
+  try {
+    const r = await fetch('/api/keys/get-link', { method:'POST', headers: headers(), body: JSON.stringify({
+      providerId: document.getElementById('gkProv').value,
+      gateUrl: document.getElementById('gkGate').value
+    })});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Error');
+    document.getElementById('gkOut').value = d.claimUrl + '\\n\\n' + (d.instructions||'');
+    toast('Claim URL lista');
+  } catch(e) { toast(e.message,'err'); }
+}
+
+async function loadTelemetry(){
+  try {
+    const list = await fetch('/api/telemetry', { headers: headers() }).then(r=>r.json());
+    const el = document.getElementById('telBox');
+    el.innerHTML = (list||[]).map(t => {
+      const time = t.createdAt ? new Date(t.createdAt).toLocaleTimeString() : '';
+      return '<div style="color:#4ade80">['+time+'] <span style="color:#a78bfa">'+esc(t.event)+'</span> <span style="color:#5a5a6e">'+esc(t.ip)+'</span> '+esc(t.detail||'')+'</div>';
+    }).join('') || '<div style="color:#5a5a6e">Sin eventos aún</div>';
+  } catch(e) {}
+}
+
+async function loadBugs(){
+  try {
+    const list = await fetch('/api/bugs', { headers: headers() }).then(r=>r.json());
+    document.getElementById('bugList').innerHTML = (list||[]).map(b =>
+      '<div class="card p-4"><div class="flex justify-between"><span class="text-xs" style="color:#5a5a6e">'+esc(b.fromUser)+' · '+(b.status||'open')+'</span><button class="btn-ghost text-xs" onclick="doneBug(\''+b._id+'\')">Hecho</button></div><div class="mt-2 text-sm">'+esc(b.message)+'</div></div>'
+    ).join('') || '<div style="color:#5a5a6e">Sin reportes</div>';
+  } catch(e) {}
+}
+async function doneBug(id){
+  await fetch('/api/bugs/'+id+'/done', { method:'POST', headers: headers() });
+  loadBugs();
+}
+
+async function loadRoutes(){
+  try {
+    const scripts = await fetch('/api/scripts', { headers: headers() }).then(r=>r.json());
+    document.getElementById('routeScript').innerHTML = (scripts||[]).map(s=>'<option value="'+s.id+'">'+esc(s.name)+'</option>').join('');
+    const list = await fetch('/api/routes', { headers: headers() }).then(r=>r.json());
+    const host = location.origin;
+    document.getElementById('routeList').innerHTML = (list||[]).map(r =>
+      '<div class="card p-3"><div class="font-mono text-xs">'+host+'/r/'+r.slug+'</div><div class="flex gap-2 mt-2"><button class="btn-ghost text-xs" onclick="copyLs(\''+host+'/r/'+r.slug+'\')">Copiar</button><button class="btn-ghost text-xs" onclick="rotateRoute(\''+r._id+'\')">Rotar</button><button class="btn-ghost text-xs" style="color:#f87171" onclick="delRoute(\''+r._id+'\')">Borrar</button></div></div>'
+    ).join('') || '<div style="color:#5a5a6e">Sin rutas</div>';
+  } catch(e) {}
+}
+async function createRoute(){
+  try {
+    const r = await fetch('/api/routes', { method:'POST', headers: headers(), body: JSON.stringify({ scriptId: document.getElementById('routeScript').value }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Error');
+    toast('Ruta creada'); loadRoutes();
+  } catch(e) { toast(e.message,'err'); }
+}
+async function rotateRoute(id){
+  const r = await fetch('/api/routes/rotate', { method:'POST', headers: headers(), body: JSON.stringify({ id }) });
+  const d = await r.json();
+  if (!r.ok) return toast(d.error||'Error','err');
+  toast('Rotada: /r/'+d.slug); loadRoutes();
+}
+async function delRoute(id){
+  await fetch('/api/routes/'+id, { method:'DELETE', headers: headers() });
+  loadRoutes();
+}
+
+(function(){
+  const el = document.getElementById('secSnippet');
+  if (!el) return;
+  el.textContent = `-- Env check Qrex
+local HttpService = game:GetService("HttpService")
+local signals = {
+  emulator = false, -- detecta tu criterio
+  httpSpy = false,
+  isStudio = game:GetService("RunService"):IsStudio(),
+  debugHooks = false,
+  suspicious = false
+}
+local body = HttpService:JSONEncode({ signals = signals, ownerId = "YOUR_OWNER_ID", scriptId = "SCRIPT_ID" })
+local res = request({ Url = "${location.origin}/api/security/env-check", Method = "POST", Headers = {["Content-Type"]="application/json"}, Body = body })
+local data = HttpService:JSONDecode(res.Body)
+if data.blocked then return warn("Blocked environment") end
+`;
+})();
+
+function daysAgo(n){
+  const d = new Date();
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() - n);
+  return d;
+}
+
+function fmtDay(d){
+  return (d.getMonth()+1) + '/' + d.getDate();
+}
+
+async function loadAnalytics(){
+  try {
+    const r = await fetch('/api/executions', { headers: headers() });
+    if (!r.ok) return;
+    const list = await r.json();
+
+    // table (sin IP, solo fecha/script/hora)
+    document.getElementById('execTable').innerHTML = list.slice(0,50).map(e => {
+      const dt = e.createdAt ? new Date(e.createdAt) : null;
+      const fecha = dt ? dt.toLocaleDateString() : '-';
+      const hora = dt ? dt.toLocaleTimeString() : '-';
+      return '<tr><td style="color:#8b8b9e">'+esc(fecha)+'</td><td>'+esc(e.scriptName)+'</td><td style="color:#5a5a6e">'+esc(hora)+'</td></tr>';
+    }).join('') || '<tr><td colspan="3" class="text-center py-8" style="color:#5a5a6e">Sin ejecuciones aún</td></tr>';
+
+    // daily counts last 14 days
+    const dailyLabels = [];
+    const dailyData = [];
+    for (let i = 13; i >= 0; i--) {
+      const day = daysAgo(i);
+      const next = daysAgo(i-1);
+      dailyLabels.push(fmtDay(day));
+      const c = list.filter(e => {
+        if (!e.createdAt) return false;
+        const t = new Date(e.createdAt).getTime();
+        return t >= day.getTime() && t < next.getTime();
+      }).length;
+      dailyData.push(c);
+    }
+
+    // by script
+    const byScript = {};
+    list.forEach(e => {
+      const n = e.scriptName || 'Unknown';
+      byScript[n] = (byScript[n] || 0) + 1;
+    });
+    const scriptEntries = Object.entries(byScript).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    const scriptLabels = scriptEntries.map(x=>x[0]);
+    const scriptData = scriptEntries.map(x=>x[1]);
+
+    // hourly
+    const hourly = new Array(24).fill(0);
+    list.forEach(e => {
+      if (!e.createdAt) return;
+      const h = new Date(e.createdAt).getUTCHours();
+      hourly[h]++;
+    });
+    const hourLabels = hourly.map((_,i)=> i + 'h');
+
+    const purple = 'rgba(167, 139, 250, 0.85)';
+    const purpleBg = 'rgba(124, 58, 237, 0.25)';
+    const purpleBorder = 'rgba(167, 139, 250, 0.5)';
+
+    function upsert(chartRef, canvasId, config) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return null;
+      if (chartRef) chartRef.destroy();
+      return new Chart(canvas, config);
+    }
+
+    chartDaily = upsert(chartDaily, 'chartDaily', {
+      type: 'bar',
+      data: {
+        labels: dailyLabels,
+        datasets: [{ data: dailyData, backgroundColor: purpleBg, borderColor: purpleBorder, borderWidth: 1, borderRadius: 6 }]
+      },
+      options: chartDefaults
+    });
+
+    chartScripts = upsert(chartScripts, 'chartScripts', {
+      type: 'doughnut',
+      data: {
+        labels: scriptLabels.length ? scriptLabels : ['Sin datos'],
+        datasets: [{
+          data: scriptData.length ? scriptData : [1],
+          backgroundColor: ['#7c3aed','#a78bfa','#6d28d9','#4c1d95','#c4b5fd','#8b5cf6','#5b21b6','#ddd6fe'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'right', labels: { color: '#8b8b9e', font: { size: 11 }, boxWidth: 12 } } }
+      }
+    });
+
+    chartHourly = upsert(chartHourly, 'chartHourly', {
+      type: 'line',
+      data: {
+        labels: hourLabels,
+        datasets: [{
+          data: hourly,
+          borderColor: purple,
+          backgroundColor: purpleBg,
+          fill: true,
+          tension: 0.35,
+          pointRadius: 2,
+          pointBackgroundColor: purple
+        }]
+      },
+      options: chartDefaults
+    });
+
+    // overview mini chart (last 7 days)
+    const ovLabels = dailyLabels.slice(-7);
+    const ovData = dailyData.slice(-7);
+    chartOverview = upsert(chartOverview, 'chartOverview', {
+      type: 'line',
+      data: {
+        labels: ovLabels,
+        datasets: [{
+          data: ovData,
+          borderColor: purple,
+          backgroundColor: purpleBg,
+          fill: true,
+          tension: 0.4,
+          pointRadius: 3,
+          pointBackgroundColor: purple
+        }]
+      },
+      options: chartDefaults
+    });
+  } catch(e) { console.error(e); }
+}
+</script>
+</body>
+</html>
