@@ -427,11 +427,10 @@
               <div>
                 <label class="field">Protección del código</label>
                 <select id="sObfMode">
-                  <option value="qrex">QyrexObf (online)</option>
-                  <option value="local">Código plano</option>
-                  <option value="none">Solo EnvLogger (sin XOR)</option>
+                  <option value="voltils" selected>Voltils (recomendado)</option>
+                  <option value="none">Sin ofuscar (solo EnvLogger)</option>
                 </select>
-              </div>
+                <div class="text-xs mt-1" style="color:#5a5a6e">Si no eliges nada se usa Voltils. Env anti-steal siempre va incluido.</div></div>
               <div class="text-xs" style="color:#5a5a6e">Gratis: máx 15 scripts · VIP: ilimitados</div>
 
               <div class="tab-bar">
@@ -1241,7 +1240,7 @@ async function createScript(){
     if (editId) {
       r = await fetch('/api/scripts/' + editId, {
         method: 'PUT', headers: headers(),
-        body: JSON.stringify({ name, description, source, obfMode: (document.getElementById('sObfMode')||{}).value || 'qrex', keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
+        body: JSON.stringify({ name, description, source, obfMode: (document.getElementById('sObfMode')||{}).value || 'voltils', keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
       });
       d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Error al guardar');
@@ -1257,7 +1256,7 @@ async function createScript(){
     } else {
       r = await fetch('/api/scripts', {
         method:'POST', headers: headers(),
-        body: JSON.stringify({ name, description, source, obfMode: (document.getElementById('sObfMode')||{}).value || 'qrex', keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
+        body: JSON.stringify({ name, description, source, obfMode: (document.getElementById('sObfMode')||{}).value || 'voltils', keyMode: (document.getElementById('sKeyMode')||{}).value || 'keyless', providerId: (document.getElementById('sProvider')||{}).value || '' })
       });
       d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Error');
