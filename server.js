@@ -15,7 +15,7 @@ const MONGO_URI = process.env.MONGO_URI || '';
 const OBFUSCATOR_URL = process.env.OBFUSCATOR_URL || 'https://qyrexobf.onrender.com/api/obfuscate';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/auto';
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 app.use(helmet({
   contentSecurityPolicy: false,
@@ -326,7 +326,7 @@ function auth(req, res, next) {
 
 function needMongo(req, res, next) {
   if (!MONGO_URI) {
-    return res.status(503).json({ error: 'MONGO_URI no configurado en Render Environment' });
+    return res.status(503).json({ error: 'MONGO_URI no configurado' });
   }
   if (!mongoReady && mongoose.connection.readyState !== 1) {
     return res.status(503).json({ error: 'MongoDB no conectado. Revisa MONGO_URI y Network Access en Atlas (0.0.0.0/0)' });
@@ -355,11 +355,8 @@ function xorBytes(buf, key) {
 
 /** 5 capas: XOR aleatorio + Base64 repetido (Lua decoder al final) */
 async function resolveObfuscated(source, mode) {
-  // mode: 'none' | 'qrex' | 'local'
-  if (mode === 'none') return { code: source, doObfuscate: false, obfMode: 'none' };
-  if (mode === 'local') return { code: localObfuscate(source), doObfuscate: true, obfMode: 'local' };
-  const code = await obfuscateWithQyrex(source);
-  return { code, doObfuscate: true, obfMode: 'qrex' };
+  // Ofuscador desactivado
+  return { code: source, doObfuscate: false, obfMode: 'none' };
 }
 
 function localObfuscate(code) {
@@ -407,6 +404,8 @@ function localObfuscate(code) {
   return lines.join('\n');
 }
 
+
+const ENV_LOGGER_TEMPLATE = "--[[ Qrex Env Logger ]]\nlocal _ok = true\nlocal _reasons = {}\nlocal function fail(r) _ok=false; _reasons[#_reasons+1]=r end\n\ndo\n  local a = true\n  local b = getgenv\n  local c = debug\n  local d = c and c.getinfo\n  local e = c and (c.getupvalue or c.getupvalues)\n  local f = getmetatable\n  local g = iscclosure\n  if not b or not d then\n    a = false\n  else\n    local h = b()\n    if f(h) and (f(h).__index or f(h).__newindex or f(h).__metatable) then a = false end\n    local k = d(b)\n    if not k or k.what ~= \"C\" or k.source ~= \"=[C]\" then a = false end\n    if g and not g(b) then a = false end\n    if e then\n      local l, m = pcall(e, b, 1)\n      if l and m ~= nil then a = false end\n    end\n    local x = \"_t\"\n    h[x] = 1\n    if rawget(h, x) ~= 1 then a = false end\n    h[x] = nil\n  end\n  if not a then fail(\"genv\") end\nend\n\ndo\n  local success = pcall(function()\n    local c = Instance.new(\"TerrainRegion\")\n    assert(typeof(c) == \"Instance\")\n    assert(c.ClassName == \"TerrainRegion\")\n    assert(c:IsA(\"TerrainRegion\"))\n    local workspaceTerrain = workspace:FindFirstChildOfClass(\"Terrain\")\n    if workspaceTerrain then\n      local ok, region = pcall(function()\n        return workspaceTerrain:CopyRegion(Region3.new(Vector3.new(0,0,0), Vector3.new(4,4,4)))\n      end)\n      if ok and region then\n        assert(typeof(region) == \"TerrainRegion\")\n        local size = region.Size\n        assert(typeof(size) == \"Vector3int16\")\n      end\n    end\n    local part = Instance.new(\"Part\")\n    local _ = part.Position\n    part:Destroy()\n  end)\n  if not success then fail(\"terrain\") end\nend\n\ndo\n  if game.ClassName ~= \"DataModel\" then fail(\"datamodel\") end\nend\n\ndo\n  local w = workspace\n  local a = Instance.new(\"Part\")\n  local b = Instance.new(\"Part\")\n  a.Anchored = true\n  b.Anchored = true\n  a.CFrame = CFrame.new(0,0,0)\n  b.CFrame = CFrame.new(0,0,0)\n  a.Parent = w\n  b.Parent = w\n  local q = OverlapParams.new()\n  q.IncludeInstances = {a, b}\n  local x = w:GetPartBoundsInBox(CFrame.new(), Vector3.new(4,4,4), q)\n  q.ExcludeInstances = {b}\n  local y = w:GetPartBoundsInBox(CFrame.new(), Vector3.new(4,4,4), q)\n  q.IncludeInstances = {}\n  local z = w:GetPartBoundsInBox(CFrame.new(), Vector3.new(4,4,4), q)\n  local function has(t, inst)\n    for _, v in t do if v == inst then return true end end\n    return false\n  end\n  local ok = has(x,a) and has(x,b) and has(y,a) and not has(y,b) and #z==0\n  a:Destroy(); b:Destroy()\n  if not ok then fail(\"overlap\") end\nend\n\ndo\n  local ok = pcall(function()\n    local ts = game:GetService(\"TweenService\")\n    local obj = Instance.new(\"NumberValue\")\n    obj.Value = 0\n    obj.Parent = workspace\n    local tween = ts:Create(obj, TweenInfo.new(1, Enum.EasingStyle.Linear, Enum.EasingDirection.In), {Value=1})\n    tween:Play()\n    task.wait(0.5)\n    local mid = obj.Value\n    if mid <= 0 or mid >= 1 or mid < 0.3 or mid > 0.7 then error(\"dtc\") end\n    tween.Completed:Wait()\n    if obj.Value ~= 1 then error(\"dtc\") end\n    obj:Destroy()\n  end)\n  if not ok then fail(\"tween\") end\nend\n\nlocal HttpService = game:GetService(\"HttpService\")\nlocal payload = HttpService:JSONEncode({\n  ok = _ok,\n  reasons = _reasons,\n  executor = (identifyexecutor and identifyexecutor()) or \"unknown\"\n})\npcall(function()\n  if request then\n    request({\n      Url = \"__REPORT_URL__\",\n      Method = \"POST\",\n      Headers = {[\"Content-Type\"]=\"application/json\"},\n      Body = payload\n    })\n  end\nend)\nif not _ok then\n  warn(\"[Qrex Env] FAIL:\", table.concat(_reasons, \",\"))\n  return\nend\nprint(\"[Qrex Env] pass\")\n";
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -1246,7 +1245,7 @@ const aiLimiter = rateLimit({
 app.post('/api/ai/generate', auth, aiLimiter, async (req, res) => {
   try {
     if (!OPENROUTER_API_KEY) {
-      return res.status(503).json({ error: 'OPENROUTER_API_KEY no configurada en Render Environment' });
+      return res.status(503).json({ error: 'OPENROUTER_API_KEY no configurada' });
     }
     const prompt = String((req.body && req.body.prompt) || '').trim().slice(0, 2000);
     if (!prompt || prompt.length < 2) {
@@ -1300,6 +1299,39 @@ app.get('/api/ai/status', auth, (req, res) => {
   res.json({ configured: !!OPENROUTER_API_KEY, model: OPENROUTER_MODEL });
 });
 
+
+// ========== ENV LOGGER ==========
+app.get('/api/env-logger', (req, res) => {
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const reportUrl = proto + '://' + host + '/api/env-report';
+  const lua = ENV_LOGGER_TEMPLATE.replace(/__REPORT_URL__/g, reportUrl);
+  res.type('text/plain').send(lua);
+});
+
+app.post('/api/env-report', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const ip = clientIp(req);
+    console.log('[ENV-REPORT]', ip, JSON.stringify(body).slice(0, 500));
+    if (mongoReady && mongoose.connection.readyState === 1) {
+      try {
+        await Execution.create({
+          scriptId: 'env-logger',
+          scriptName: body.ok ? 'env-pass' : 'env-fail',
+          ownerId: 'system',
+          ip,
+          userAgent: String(req.headers['user-agent'] || '').slice(0, 200)
+        });
+      } catch (e) {}
+    }
+    res.json({ received: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Nunca devolver HTML en rutas /api/*
@@ -1317,7 +1349,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || 'Error interno' });
 });
 
-app.listen(PORT, () => {
-  console.log('QrexApi listening on port', PORT);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('QrexApi listening on 0.0.0.0:' + PORT);
   console.log('MONGO_URI set:', !!MONGO_URI);
 });
