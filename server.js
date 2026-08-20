@@ -620,7 +620,7 @@ app.post('/api/scripts', auth, needMongo, async (req, res) => {
     res.json({
       id: doc.id,
       name: doc.name,
-      loadstring: `loadstring(game:HttpGet("${proto}://${host}/api/raw/${doc.id}"))()`
+      loadstring: `loadstring(game:HttpGet("${proto}://${host}/api/v1/luascripts/public/${doc.id}/download"))()`
     });
   } catch (e) {
     console.error(e);
@@ -844,7 +844,7 @@ app.post('/api/hub', auth, needMongo, async (req, res) => {
 
     const host = req.headers['x-forwarded-host'] || req.headers.host;
     const proto = req.headers['x-forwarded-proto'] || 'https';
-    const loadstring = `loadstring(game:HttpGet("${proto}://${host}/api/raw/${s.id}"))()`;
+    const loadstring = `loadstring(game:HttpGet("${proto}://${host}/api/v1/luascripts/public/${s.id}/download"))()`;
 
     const user = await User.findById(req.user.sub).lean();
     const doc = await HubScript.create({
