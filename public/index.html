@@ -541,9 +541,9 @@ local Players = game:GetService(&quot;Players&quot;)
             </div>
             <div>
               <div class="text-xs font-medium mb-1" style="color:#6b6b80">Raw script</div>
-              <code class="text-sm" style="color:#8b8b9e">GET /api/raw/:id</code>
+              <code class="text-sm" style="color:#8b8b9e">GET /api/v1/luascripts/public/:id/download</code>
             </div>
-            <div class="hint-green">Si abres /api/raw/:id en el navegador verás la página Access Denied. Solo Roblox/executors reciben el script.</div>
+            <div class="hint-green">Si abres /api/v1/luascripts/public/:id/download en el navegador verás la página Access Denied. Solo Roblox/executors reciben el script.</div>
           </div>
         </section>
 
@@ -787,6 +787,13 @@ local Players = game:GetService(&quot;Players&quot;)
 </div>
 
 <script>
+function scriptDownloadUrl(id){
+  return location.origin + '/api/v1/luascripts/public/' + id + '/download';
+}
+function scriptLoadstring(id){
+  return 'loadstring(game:HttpGet("' + scriptDownloadUrl(id) + '"))()';
+}
+
 
 
 let token = localStorage.getItem('qrex_token') || '';
@@ -1134,7 +1141,7 @@ function renderScripts(list){
     return;
   }
   el.innerHTML = list.map(s => {
-    const ls = 'loadstring(game:HttpGet("'+host+'/api/raw/'+s.id+'"))()';
+    const ls = scriptLoadstring(s.id);
     const date = s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '';
     return '<div class="card p-5">'+
       '<div class="flex justify-between items-start mb-3 gap-3">'+
@@ -1244,7 +1251,7 @@ async function createScript(){
       toast('Script actualizado');
       wrap.classList.remove('hidden');
       const host = location.origin;
-      out.value = 'loadstring(game:HttpGet("'+host+'/api/raw/'+editId+'"))()';
+      out.value = scriptLoadstring(editId);
       const prefCopy = document.getElementById('prefCopy');
       if (prefCopy && prefCopy.checked) { try { navigator.clipboard.writeText(out.value); } catch {} }
       resetCreateForm();
