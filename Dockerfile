@@ -1,29 +1,19 @@
-# QrexApi — Fly.io
-app = "qyrexapi"
-primary_region = "iad"
+FROM node:20-alpine
 
-[build]
+WORKDIR /app
 
-[env]
-  PORT = "8080"
-  NODE_ENV = "production"
+# Install deps first (better cache)
+COPY package.json ./
+RUN npm install --omit=dev --no-audit --no-fund
 
-[http_service]
-  internal_port = 8080
-  force_https = true
-  auto_stop_machines = "stop"
-  auto_start_machines = true
-  min_machines_running = 0
-  processes = ["app"]
+# App source
+COPY server.js ./
+COPY public ./public/
 
-  [[http_service.checks]]
-    interval = "15s"
-    timeout = "5s"
-    grace_period = "30s"
-    method = "GET"
-    path = "/api/health"
+ENV NODE_ENV=production
+ENV PORT=8080
 
-[[vm]]
-  memory = "512mb"
-  cpu_kind = "shared"
-  cpus = 1
+EXPOSE 8080
+
+# Important for Fly: bind 0.0.0.0 (handled in server.js)
+CMD ["node", "server.js"]
