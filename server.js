@@ -12,7 +12,9 @@ app.set('trust proxy', 1);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'cambia-este-secret-por-uno-largo';
 const MONGO_URI = process.env.MONGO_URI || '';
-const OBFUSCATOR_URL = process.env.OBFUSCATOR_URL || 'https://qyrexobf.onrender.com/api/obfuscate';
+const VOLTILS_URL = process.env.VOLTILS_URL || 'https://voltils.nxtdev.xyz/v1/obfuscate';
+const VOLTILS_KEY = process.env.VOLTILS_KEY || 'voltils_1141173377189556324_c3102f5c336c3445442988c4366fe2eb10975a15';
+const VOLTILS_PRESET = process.env.VOLTILS_PRESET || 'normal';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/auto';
 
@@ -335,17 +337,28 @@ function needMongo(req, res, next) {
   next();
 }
 
-async function obfuscateWithQyrex(code) {
-  const r = await fetch(OBFUSCATOR_URL, {
+async function obfuscateWithVoltils(code) {
+  const r = await fetch(VOLTILS_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code })
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + VOLTILS_KEY
+    },
+    body: JSON.stringify({ code: String(code || ''), preset: VOLTILS_PRESET }),
+    signal: AbortSignal.timeout(60000)
   });
-  const data = await r.json();
-  if (!data || !data.success || !data.code) {
-    throw new Error((data && data.error) || 'Obfuscator failed');
+  const text = await r.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch {}
+  // Accept several response shapes
+  const out = (data && (data.code || data.result || data.obfuscated || data.output || data.data))
+    || (typeof data === 'string' ? data : null)
+    || (!data && text && !text.trim().startsWith('{') ? text : null);
+  if (!r.ok || !out) {
+    const err = (data && (data.error || data.message)) || ('Voltils HTTP ' + r.status);
+    throw new Error(String(err));
   }
-  return data.code;
+  return String(out);
 }
 
 function xorBytes(buf, key) {
@@ -362,23 +375,20 @@ function wrapWithEnvLogger(source) {
 }
 
 async function resolveObfuscated(source, mode) {
-  // Nunca crashea: env gate + ofuscación local. Qyrex online desactivado (inestable).
+  // mode: 'voltils' (default) | 'none'
+  // Siempre env logger delante. Si Voltils falla → env only (no crash).
+  const protected = wrapWithEnvLogger(source);
+  const m = (mode || 'voltils').toString().toLowerCase();
+  if (m === 'none') {
+    return { code: protected, doObfuscate: false, obfMode: 'none' };
+  }
   try {
-    const protected = wrapWithEnvLogger(source);
-    const m = (mode || 'local').toString();
-    if (m === 'none') {
-      return { code: protected, doObfuscate: false, obfMode: 'none' };
-    }
-    // local / qrex / cualquier otro → local XOR (estable)
-    try {
-      return { code: localObfuscate(protected), doObfuscate: true, obfMode: 'local' };
-    } catch (e2) {
-      console.error('localObf fail', e2.message);
-      return { code: protected, doObfuscate: false, obfMode: 'none' };
-    }
+    const code = await obfuscateWithVoltils(protected);
+    return { code, doObfuscate: true, obfMode: 'voltils' };
   } catch (e) {
-    console.error('resolveObfuscated', e.message);
-    return { code: String(source || ''), doObfuscate: false, obfMode: 'none' };
+    console.error('Voltils fail:', e.message);
+    // fallback: env logger only, never crash create
+    return { code: protected, doObfuscate: false, obfMode: 'none', warning: 'Voltils falló: ' + e.message };
   }
 }
 
@@ -662,12 +672,12 @@ app.put('/api/scripts/:id', auth, needMongo, async (req, res) => {
     }
     if (source) {
       s.source = source;
-      const resolved = await resolveObfuscated(source, s.obfMode || (s.doObfuscate ? 'qrex' : 'none'));
+      const resolved = await resolveObfuscated(source, s.obfMode || (s.doObfuscate ? 'voltils' : 'none'));
       s.obfuscated = resolved.code;
       s.doObfuscate = resolved.doObfuscate;
       s.obfMode = resolved.obfMode;
     } else if ((req.body?.obfMode || req.body?.doObfuscate !== undefined) && s.source) {
-      const resolved = await resolveObfuscated(s.source, s.obfMode || 'qrex');
+      const resolved = await resolveObfuscated(s.source, s.obfMode || 'voltils');
       s.obfuscated = resolved.code;
       s.doObfuscate = resolved.doObfuscate;
       s.obfMode = resolved.obfMode;
