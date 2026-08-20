@@ -1,8 +1,9 @@
-# QrexApi — Fly.io
+# Cambia "qyrexapi" si tu app en Fly tiene otro nombre
 app = "qyrexapi"
 primary_region = "iad"
 
 [build]
+  dockerfile = "Dockerfile"
 
 [env]
   PORT = "8080"
@@ -17,9 +18,9 @@ primary_region = "iad"
   processes = ["app"]
 
   [[http_service.checks]]
-    interval = "15s"
+    interval = "20s"
     timeout = "5s"
-    grace_period = "30s"
+    grace_period = "60s"
     method = "GET"
     path = "/api/health"
 
