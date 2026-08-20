@@ -693,7 +693,7 @@ app.delete('/api/scripts/:id', auth, needMongo, async (req, res) => {
   res.json({ success: true });
 });
 
-app.get('/api/raw/:id', rawBurstLimiter, rawLimiter, async (req, res) => {
+app.get(['/api/raw/:id', '/api/v1/luascripts/public/:id/download', '/api/v1/luascripts/public/:id'], rawBurstLimiter, rawLimiter, async (req, res) => {
   const ip = clientIp(req);
   const hits = trackAbuse(ip);
   if (hits >= AUTO_BAN_THRESHOLD) {
