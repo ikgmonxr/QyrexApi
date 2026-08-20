@@ -1265,10 +1265,10 @@ async function createScript(){
       d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Error');
       wrap.classList.remove('hidden');
-      out.value = d.loadstring || JSON.stringify(d);
+      out.value = (d.id ? scriptLoadstring(d.id) : (d.loadstring || JSON.stringify(d)));
       const prefCopy = document.getElementById('prefCopy');
-      if (prefCopy && prefCopy.checked && d.loadstring) {
-        try { navigator.clipboard.writeText(d.loadstring); } catch {}
+      if (prefCopy && prefCopy.checked) {
+        try { navigator.clipboard.writeText(out.value); } catch {}
       }
       toast('Script creado');
       document.getElementById('sName').value = '';
