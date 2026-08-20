@@ -111,28 +111,57 @@ app.use(async (req, res, next) => {
 
 
 let mongoReady = false;
+let lastMongoError = '';
+let useMemory = false;
+const fs = require('fs');
+const MEM_FILE = process.env.MEM_FILE || '/tmp/qrex-mem.json';
+const memDB = { users: [], scripts: [], executions: [] };
+function memLoad() {
+  try {
+    if (fs.existsSync(MEM_FILE)) Object.assign(memDB, JSON.parse(fs.readFileSync(MEM_FILE, 'utf8')));
+  } catch (e) {}
+}
+function memSave() {
+  try { fs.writeFileSync(MEM_FILE, JSON.stringify(memDB)); } catch (e) {}
+}
+memLoad();
+async function dbCreateScript(data) {
+  if (useMemory || !mongoReady) {
+    const doc = { id: crypto.randomBytes(12).toString('hex'), executions: 0, createdAt: new Date().toISOString(), ...data };
+    memDB.scripts.push(doc);
+    memSave();
+    return doc;
+  }
+  return Script.create(data);
+}
+
 
 async function connectMongo() {
   if (!MONGO_URI) {
-    console.error('FATAL: MONGO_URI no configurado');
+    lastMongoError = 'MONGO_URI vacío';
+    useMemory = true;
+    console.error(lastMongoError, '→ memoria');
     return;
   }
   try {
-    await mongoose.connect(MONGO_URI, {
-      serverSelectionTimeoutMS: 10000
-    });
+    console.log('Connecting MongoDB...');
+    await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 10000 });
     mongoReady = true;
+    useMemory = false;
+    lastMongoError = '';
     console.log('Mongo OK');
-  } catch (err) {
+  } catch (e) {
     mongoReady = false;
-    console.error('Mongo error:', err.message);
+    useMemory = true;
+    lastMongoError = e.message || String(e);
+    console.error('Mongo fail → memoria:', lastMongoError);
   }
 }
 connectMongo();
 
 mongoose.connection.on('connected', () => { mongoReady = true; console.log('Mongo connected'); });
 mongoose.connection.on('disconnected', () => { mongoReady = false; console.log('Mongo disconnected'); });
-mongoose.connection.on('error', (e) => { mongoReady = false; console.error('Mongo conn error:', e.message); });
+mongoose.connection.on('error', (e) => { mongoReady = false; lastMongoError = e.message || String(e); console.error('Mongo conn error:', lastMongoError); });
 
 const User = mongoose.models.QrexUser || mongoose.model('QrexUser', new mongoose.Schema({
   username: { type: String, unique: true, required: true, lowercase: true, trim: true },
@@ -380,7 +409,7 @@ function verifyPassword(password, stored) {
 
 function signToken(user) {
   return jwt.sign(
-    { sub: user._id.toString(), username: user.username },
+    { sub: String(user._id || user.id), username: user.username },
     JWT_SECRET,
     { expiresIn: '30d' }
   );
@@ -399,12 +428,7 @@ function auth(req, res, next) {
 }
 
 function needMongo(req, res, next) {
-  if (!MONGO_URI) {
-    return res.status(503).json({ error: 'MONGO_URI no configurado' });
-  }
-  if (!mongoReady && mongoose.connection.readyState !== 1) {
-    return res.status(503).json({ error: 'MongoDB no conectado. Revisa MONGO_URI y Network Access en Atlas (0.0.0.0/0)' });
-  }
+  useMemory = !(mongoReady || mongoose.connection.readyState === 1);
   next();
 }
 
@@ -487,7 +511,10 @@ app.get('/api/health', (req, res) => {
     ok: true,
     service: 'QrexApi',
     mongo: mongoReady || mongoose.connection.readyState === 1,
-    mongoState: mongoose.connection.readyState // 0=off 1=on 2=connecting 3=disconnecting
+    mongoState: mongoose.connection.readyState,
+    storage: mongoReady ? 'mongo' : 'memory',
+    mongoError: lastMongoError || null,
+    mongoError: lastMongoError || null
   });
 });
 
@@ -496,131 +523,90 @@ app.post('/api/auth/register', needMongo, async (req, res) => {
     const { username, password } = req.body || {};
     const user = (username || '').trim().toLowerCase();
     const pass = password || '';
-
-    if (!user || user.length < 3) {
-      return res.status(400).json({ error: 'Usuario minimo 3 caracteres' });
+    if (!user || user.length < 3) return res.status(400).json({ error: 'Usuario mínimo 3 caracteres' });
+    if (!pass || pass.length < 4) return res.status(400).json({ error: 'Contraseña mínimo 4 caracteres' });
+    if (useMemory) {
+      if (memDB.users.find(u => u.username === user)) return res.status(400).json({ error: 'Usuario ya existe' });
+      const isOwner = user === 'owner';
+      const doc = { _id: crypto.randomBytes(12).toString('hex'), username: user, passwordHash: hashPassword(pass), role: isOwner ? 'admin' : 'user', premium: isOwner, createdAt: new Date().toISOString() };
+      memDB.users.push(doc); memSave();
+      return res.json({ token: signToken(doc), user: { id: doc._id, username: doc.username, role: doc.role, premium: !!doc.premium } });
     }
-    if (!/^[a-z0-9_]+$/.test(user)) {
-      return res.status(400).json({ error: 'Solo letras, numeros y _' });
-    }
-    if (pass.length < 4) {
-      return res.status(400).json({ error: 'Contraseña minimo 4 caracteres' });
-    }
-
     const exists = await User.findOne({ username: user });
-    if (exists) {
-      return res.status(400).json({ error: 'Ese usuario ya existe' });
-    }
-
+    if (exists) return res.status(400).json({ error: 'Usuario ya existe' });
     const isOwnerName = user === 'owner';
-    const doc = await User.create({
-      username: user,
-      passwordHash: hashPassword(pass),
-      role: isOwnerName ? 'admin' : 'user',
-      premium: isOwnerName ? true : false
-    });
-
-    const token = signToken(doc);
-    res.json({
-      token,
-      user: {
-        id: doc._id,
-        username: doc.username,
-        role: doc.role,
-        premium: isPremiumUser(doc)
-      }
-    });
+    const doc = await User.create({ username: user, passwordHash: hashPassword(pass), role: isOwnerName ? 'admin' : 'user', premium: !!isOwnerName });
+    res.json({ token: signToken(doc), user: { id: doc._id, username: doc.username, role: doc.role, premium: isPremiumUser(doc) } });
   } catch (e) {
     console.error('register', e);
-    if (e.code === 11000) {
-      return res.status(400).json({ error: 'Ese usuario ya existe' });
-    }
-    res.status(500).json({ error: 'Error al registrar: ' + (e.message || 'desconocido') + (mongoReady ? '' : ' (Mongo offline)') });
+    res.status(500).json({ error: 'Error al registrar: ' + (e.message || 'desconocido') });
   }
 });
-
 app.post('/api/auth/login', needMongo, async (req, res) => {
   try {
     const { username, password } = req.body || {};
     const user = (username || '').trim().toLowerCase();
     const pass = password || '';
-
-    if (!user || !pass) {
-      return res.status(400).json({ error: 'Falta usuario o contraseña' });
+    if (!user || !pass) return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
+    if (useMemory) {
+      const doc = memDB.users.find(u => u.username === user);
+      if (!doc || !verifyPassword(pass, doc.passwordHash)) return res.status(401).json({ error: 'Credenciales inválidas' });
+      if (doc.username === 'owner') { doc.role = 'admin'; doc.premium = true; memSave(); }
+      return res.json({ token: signToken(doc), user: { id: doc._id, username: doc.username, role: doc.role || 'user', premium: isPremiumUser(doc) } });
     }
-
     const doc = await User.findOne({ username: user });
-    if (!doc || !verifyPassword(pass, doc.passwordHash)) {
-      return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
-    }
-
-    if (doc.username === 'owner' && doc.role !== 'admin') {
-      doc.role = 'admin';
-      doc.premium = true;
-      await doc.save();
-    }
-
-    const token = signToken(doc);
-    res.json({
-      token,
-      user: {
-        id: doc._id,
-        username: doc.username,
-        role: doc.role || 'user',
-        premium: isPremiumUser(doc)
-      }
-    });
+    if (!doc || !verifyPassword(pass, doc.passwordHash)) return res.status(401).json({ error: 'Credenciales inválidas' });
+    if (doc.username === 'owner' && doc.role !== 'admin') { doc.role = 'admin'; doc.premium = true; await doc.save(); }
+    res.json({ token: signToken(doc), user: { id: doc._id, username: doc.username, role: doc.role || 'user', premium: isPremiumUser(doc) } });
   } catch (e) {
     console.error('login', e);
-    res.status(500).json({ error: 'Error al iniciar sesion: ' + (e.message || 'desconocido') + (mongoReady ? '' : ' (Mongo offline)') });
+    res.status(500).json({ error: 'Error al iniciar sesion: ' + (e.message || 'desconocido') });
   }
 });
-
 app.get('/api/me', auth, needMongo, async (req, res) => {
+  if (useMemory) {
+    const user = memDB.users.find(u => String(u._id) === String(req.user.sub));
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (user.username === 'owner') { user.role = 'admin'; user.premium = true; memSave(); }
+    return res.json({ id: user._id, username: user.username, role: user.role || 'user', premium: isPremiumUser(user) });
+  }
   const user = await User.findById(req.user.sub);
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
-  if (user.username === 'owner' && user.role !== 'admin') {
-    user.role = 'admin';
-    user.premium = true;
-    await user.save();
-  }
-  res.json({
-    id: user._id,
-    username: user.username,
-    role: user.role || 'user',
-    premium: isPremiumUser(user)
-  });
+  if (user.username === 'owner' && user.role !== 'admin') { user.role = 'admin'; user.premium = true; await user.save(); }
+  res.json({ id: user._id, username: user.username, role: user.role || 'user', premium: isPremiumUser(user) });
 });
-
-function requireAdmin(req, res, next) {
-  User.findById(req.user.sub).then(u => {
-    if (!u || u.role !== 'admin') return res.status(403).json({ error: 'Solo admin' });
-    req.adminUser = u;
-    next();
-  }).catch(() => res.status(403).json({ error: 'Solo admin' }));
-}
-
 app.get('/api/scripts', auth, needMongo, async (req, res) => {
-  const list = await Script.find({ ownerId: req.user.sub })
-    .sort({ createdAt: -1 })
-    .select('-source -obfuscated');
+  if (useMemory) {
+    return res.json(memDB.scripts.filter(s => s.ownerId === req.user.sub).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).map(({source,obfuscated,...r})=>r));
+  }
+  const list = await Script.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).select('-source -obfuscated');
   res.json(list);
 });
-
 app.get('/api/scripts/:id', auth, needMongo, async (req, res) => {
+  if (useMemory) {
+    const s = memDB.scripts.find(x => x.id === req.params.id && x.ownerId === req.user.sub);
+    if (!s) return res.status(404).json({ error: 'No encontrado' });
+    return res.json(s);
+  }
   const s = await Script.findOne({ id: req.params.id, ownerId: req.user.sub });
   if (!s) return res.status(404).json({ error: 'No encontrado' });
   res.json(s);
 });
-
 app.post('/api/scripts', auth, needMongo, async (req, res) => {
   try {
     const { name, description, source, keyMode, providerId } = req.body || {};
     if (!name || !source) return res.status(400).json({ error: 'name y source requeridos' });
 
-    const me = await User.findById(req.user.sub);
-    const prem = isPremiumUser(me);
-    const count = await Script.countDocuments({ ownerId: req.user.sub });
+    let me, prem, count;
+    if (useMemory) {
+      me = memDB.users.find(u => String(u._id) === String(req.user.sub));
+      prem = isPremiumUser(me);
+      count = memDB.scripts.filter(s => s.ownerId === req.user.sub).length;
+    } else {
+      me = await User.findById(req.user.sub);
+      prem = isPremiumUser(me);
+      count = await Script.countDocuments({ ownerId: req.user.sub });
+    }
     if (!prem && count >= FREE_SCRIPT_LIMIT) {
       return res.status(403).json({ error: 'Límite de ' + FREE_SCRIPT_LIMIT + ' scripts. Activa VIP/Premium para ilimitados.' });
     }
@@ -642,7 +628,7 @@ app.post('/api/scripts', auth, needMongo, async (req, res) => {
     }
     if (!['none', 'qrex', 'local'].includes(obfMode)) obfMode = 'local';
     const resolved = await resolveObfuscated(source, obfMode);
-    const doc = await Script.create({
+    const doc = await dbCreateScript({
       ownerId: req.user.sub,
       name,
       description: description || '',
@@ -730,10 +716,14 @@ app.put('/api/scripts/:id', auth, needMongo, async (req, res) => {
 });
 
 app.delete('/api/scripts/:id', auth, needMongo, async (req, res) => {
+  if (useMemory) {
+    memDB.scripts = memDB.scripts.filter(s => !(s.id === req.params.id && s.ownerId === req.user.sub));
+    memSave();
+    return res.json({ success: true });
+  }
   await Script.deleteOne({ id: req.params.id, ownerId: req.user.sub });
   res.json({ success: true });
 });
-
 app.get('/api/raw/:id', rawBurstLimiter, rawLimiter, async (req, res) => {
   const ip = clientIp(req);
   const hits = trackAbuse(ip);
@@ -802,7 +792,7 @@ app.get('/api/raw/:id', rawBurstLimiter, rawLimiter, async (req, res) => {
   }
 
   if (!mongoReady && mongoose.connection.readyState !== 1) {
-    return res.status(503).type('text/plain').send('-- db offline');
+    useMemory = true;
   }
 
   // límite por script+IP (60/min)
@@ -815,19 +805,27 @@ app.get('/api/raw/:id', rawBurstLimiter, rawLimiter, async (req, res) => {
   global.__rawScriptHits.set(sk, se);
   if (se.n > 60) return res.status(429).type('text/plain').send('-- slow down');
 
-  const s = await Script.findOne({ id: req.params.id });
-  if (!s) return res.status(404).type('text/plain').send('-- not found');
-
-  s.executions += 1;
-  await s.save();
-
-  await Execution.create({
-    scriptId: s.id,
-    scriptName: s.name,
-    ownerId: s.ownerId,
-    ip,
-    userAgent: req.headers['user-agent'] || ''
-  });
+  let s;
+  if (useMemory) {
+    s = memDB.scripts.find(x => x.id === req.params.id);
+    if (!s) return res.status(404).type('text/plain').send('-- not found');
+    s.executions = (s.executions || 0) + 1;
+    memSave();
+    memDB.executions.push({ scriptId: s.id, ownerId: s.ownerId, ip, createdAt: new Date().toISOString() });
+    memSave();
+  } else {
+    s = await Script.findOne({ id: req.params.id });
+    if (!s) return res.status(404).type('text/plain').send('-- not found');
+    s.executions += 1;
+    await s.save();
+    await Execution.create({
+      scriptId: s.id,
+      scriptName: s.name,
+      ownerId: s.ownerId,
+      ip,
+      userAgent: req.headers['user-agent'] || ''
+    });
+  }
 
   fireWebhooks(s.ownerId, 'script_exec', { scriptId: s.id, name: s.name, ip: String(ip).split(',')[0] });
   logTelemetry(s.ownerId, 'script_exec', String(ip).split(',')[0], s.name + ' ' + s.id);
@@ -839,6 +837,10 @@ app.get('/api/raw/:id', rawBurstLimiter, rawLimiter, async (req, res) => {
 });
 
 app.get('/api/stats', auth, needMongo, async (req, res) => {
+  if (useMemory) {
+    const scripts = memDB.scripts.filter(s => s.ownerId === req.user.sub);
+    return res.json({ scripts: scripts.length, executions: scripts.reduce((a,s)=>a+(s.executions||0),0) });
+  }
   const scripts = await Script.find({ ownerId: req.user.sub });
   const totalExec = scripts.reduce((a, s) => a + (s.executions || 0), 0);
   res.json({ scripts: scripts.length, executions: totalExec });
