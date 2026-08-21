@@ -262,6 +262,10 @@ const Provider = mongoose.models.QrexProvider || mongoose.model('QrexProvider', 
   keyValidityHours: { type: Number, default: 24 },
   hwidLimit: { type: Number, default: 1 },
   enabled: { type: Boolean, default: true },
+  // linkvertise | lootlabs | workink | custom | none
+  linkType: { type: String, default: 'custom' },
+  // URL del anuncio (Linkvertise / Lootlabs / Work.ink). Debe redirigir a /getkey/:providerId
+  adLink: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now }
 }));
 
@@ -793,7 +797,29 @@ app.get(['/api/raw/:id', '/api/v1/luascripts/public/:id/download', '/api/v1/luas
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Robots-Tag', 'noindex');
-  res.type('text/plain').send(s.obfuscated);
+
+  let payload = s.obfuscated || '';
+  if (s.keyMode === 'key' && s.providerId) {
+    try {
+      const prov = await Provider.findById(s.providerId);
+      const host = req.headers['x-forwarded-host'] || req.headers.host;
+      const proto = req.headers['x-forwarded-proto'] || 'https';
+      const base = proto + '://' + host;
+      const claimUrl = base + '/getkey/' + s.providerId;
+      // Prefer ad link (linkvertise/lootlabs/work.ink). Fallback = claim directo
+      const getKeyLink = (prov && prov.adLink) ? prov.adLink : claimUrl;
+      payload = buildKeyGateLua({
+        apiBase: base,
+        providerName: (prov && prov.name) || s.providerName || 'Qrex',
+        getKeyLink,
+        scriptCode: s.obfuscated
+      });
+    } catch (e) {
+      console.error('key gate wrap', e);
+    }
+  }
+
+  res.type('text/plain').send(payload);
 });
 
 app.get('/api/stats', auth, needMongo, async (req, res) => {
@@ -954,16 +980,19 @@ app.get('/api/providers', auth, needMongo, async (req, res) => {
 
 app.post('/api/providers', auth, needMongo, async (req, res) => {
   try {
-    const { name, keyValidityHours, hwidLimit } = req.body || {};
+    const { name, keyValidityHours, hwidLimit, linkType, adLink } = req.body || {};
     const n = (name || '').trim();
     if (!n || n.length < 2) return res.status(400).json({ error: 'Nombre requerido' });
     const exists = await Provider.findOne({ ownerId: req.user.sub, name: n });
     if (exists) return res.status(400).json({ error: 'Ya tienes un provider con ese nombre' });
+    const lt = ['linkvertise','lootlabs','workink','custom','none'].includes(linkType) ? linkType : 'custom';
     const doc = await Provider.create({
       name: n,
       ownerId: req.user.sub,
       keyValidityHours: Math.max(1, Number(keyValidityHours) || 24),
-      hwidLimit: Math.max(1, Math.min(10, Number(hwidLimit) || 1))
+      hwidLimit: Math.max(1, Math.min(10, Number(hwidLimit) || 1)),
+      linkType: lt,
+      adLink: String(adLink || '').trim().slice(0, 500)
     });
     res.json(doc);
   } catch (e) {
@@ -974,11 +1003,13 @@ app.post('/api/providers', auth, needMongo, async (req, res) => {
 app.put('/api/providers/:id', auth, needMongo, async (req, res) => {
   const p = await Provider.findOne({ _id: req.params.id, ownerId: req.user.sub });
   if (!p) return res.status(404).json({ error: 'No encontrado' });
-  const { name, keyValidityHours, hwidLimit, enabled } = req.body || {};
+  const { name, keyValidityHours, hwidLimit, enabled, linkType, adLink } = req.body || {};
   if (name) p.name = name.trim();
   if (keyValidityHours !== undefined) p.keyValidityHours = Math.max(1, Number(keyValidityHours) || 24);
   if (hwidLimit !== undefined) p.hwidLimit = Math.max(1, Math.min(10, Number(hwidLimit) || 1));
   if (enabled !== undefined) p.enabled = !!enabled;
+  if (linkType && ['linkvertise','lootlabs','workink','custom','none'].includes(linkType)) p.linkType = linkType;
+  if (adLink !== undefined) p.adLink = String(adLink || '').trim().slice(0, 500);
   await p.save();
   res.json(p);
 });
@@ -990,6 +1021,419 @@ app.delete('/api/providers/:id', auth, needMongo, async (req, res) => {
   await Provider.deleteOne({ _id: p._id });
   res.json({ success: true });
 });
+
+
+// ========== KEY GATE (GUI) + CLAIM (Linkvertise/Lootlabs/Work.ink) ==========
+function buildKeyGateLua({ apiBase, providerName, getKeyLink, scriptCode }) {
+  const api = String(apiBase || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const prov = String(providerName || 'Qrex').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const link = String(getKeyLink || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  // script as long string - escape for Lua long brackets
+  let body = String(scriptCode || '');
+  let eq = '';
+  while (body.includes(']' + eq + ']')) eq += '=';
+  const open = '[' + eq + '[';
+  const close = ']' + eq + ']';
+
+  return `-- QrexApi Key System
+local HttpService = game:GetService("HttpService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local SoundService = game:GetService("SoundService")
+
+local _API = "${api}"
+local _PROVIDER = "${prov}"
+local _GETKEY = "${link}"
+local _SCRIPT = ${open}${body}${close}
+
+local function GetGuiParent()
+  local hOk, hui = pcall(function() return gethui() end)
+  if hOk and hui then return hui end
+  local cOk = pcall(function() return CoreGui.Name end)
+  if cOk then return CoreGui end
+  local plr = Players.LocalPlayer
+  if plr then
+    local pg = plr:FindFirstChildOfClass("PlayerGui")
+    if pg then return pg end
+  end
+  return CoreGui
+end
+
+local function getHwid()
+  local ok, id = pcall(function()
+    return game:GetService("RbxAnalyticsService"):GetClientId()
+  end)
+  if ok and id then return tostring(id) end
+  local ok2, id2 = pcall(function() return game.JobId end)
+  local uid = (Players.LocalPlayer and Players.LocalPlayer.UserId) or 0
+  return tostring(uid) .. "-" .. tostring(ok2 and id2 or "0")
+end
+
+local function httpRequest(opts)
+  local fn = (syn and syn.request) or (http and http.request) or http_request or request or (fluxus and fluxus.request)
+  if type(fn) == "function" then return fn(opts) end
+  error("No request function")
+end
+
+local QyrexAPI = {}
+function QyrexAPI.GetKeyLink()
+  return _GETKEY
+end
+function QyrexAPI.VerifyKey(key)
+  key = tostring(key or ""):gsub("%s+", "")
+  if key == "" then return false end
+  local body = HttpService:JSONEncode({ key = key, hwid = getHwid(), provider = _PROVIDER })
+  local ok, res = pcall(function()
+    return httpRequest({
+      Url = _API .. "/api/keys/verify",
+      Method = "POST",
+      Headers = { ["Content-Type"] = "application/json" },
+      Body = body
+    })
+  end)
+  if not ok or not res or not res.Body then return false end
+  local ok2, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
+  return ok2 and data and data.success == true
+end
+
+local cfg = {
+  title = "QyrexApi",
+  keyFile = "QyrexApi_Key.txt",
+  accentA = Color3.fromRGB(168, 85, 247),
+  accentB = Color3.fromRGB(236, 72, 199),
+  accentC = Color3.fromRGB(96, 200, 255),
+}
+
+local function saveKey(key)
+  if writefile then pcall(writefile, cfg.keyFile, key) end
+end
+local function loadKey()
+  if isfile and isfile(cfg.keyFile) then
+    local ok, data = pcall(readfile, cfg.keyFile)
+    if ok and data then return tostring(data) end
+  end
+  return ""
+end
+
+local function notify(kind, title, content)
+  local colors = { Info = Color3.fromRGB(96,165,250), Success = Color3.fromRGB(52,211,153), Error = Color3.fromRGB(248,113,113) }
+  local accent = colors[kind] or colors.Info
+  local sg = Instance.new("ScreenGui")
+  sg.Name = "QyrexApi_Notif"
+  sg.ResetOnSpawn = false
+  sg.DisplayOrder = 999999
+  sg.Parent = GetGuiParent()
+  local f = Instance.new("Frame")
+  f.Size = UDim2.fromOffset(280, 58)
+  f.Position = UDim2.new(1, -16, 1, -16)
+  f.AnchorPoint = Vector2.new(1, 1)
+  f.BackgroundColor3 = Color3.fromRGB(20, 18, 32)
+  f.Parent = sg
+  local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 10); c.Parent = f
+  local st = Instance.new("UIStroke"); st.Color = accent; st.Thickness = 1.2; st.Parent = f
+  local t = Instance.new("TextLabel")
+  t.BackgroundTransparency = 1
+  t.Position = UDim2.fromOffset(12, 8)
+  t.Size = UDim2.new(1, -24, 0, 18)
+  t.Font = Enum.Font.GothamBold
+  t.TextSize = 13
+  t.TextXAlignment = Enum.TextXAlignment.Left
+  t.TextColor3 = Color3.fromRGB(240,240,245)
+  t.Text = title
+  t.Parent = f
+  local d = Instance.new("TextLabel")
+  d.BackgroundTransparency = 1
+  d.Position = UDim2.fromOffset(12, 28)
+  d.Size = UDim2.new(1, -24, 0, 22)
+  d.Font = Enum.Font.Gotham
+  d.TextSize = 11
+  d.TextXAlignment = Enum.TextXAlignment.Left
+  d.TextColor3 = Color3.fromRGB(170,168,182)
+  d.Text = content
+  d.Parent = f
+  task.delay(3, function() if sg then sg:Destroy() end end)
+end
+
+local function runScript()
+  local fn, err = loadstring(_SCRIPT)
+  if type(fn) == "function" then
+    local ok, e = pcall(fn)
+    if not ok then warn("[QyrexApi] script error:", e) end
+  else
+    warn("[QyrexApi] load failed:", err)
+  end
+end
+
+-- auto verify saved key
+do
+  local saved = loadKey()
+  if saved ~= "" and QyrexAPI.VerifyKey(saved) then
+    notify("Success", "Welcome", "Key valida · cargando script")
+    task.wait(0.2)
+    runScript()
+    return
+  end
+end
+
+local Screen = Instance.new("ScreenGui")
+Screen.Name = "QyrexApi_KeySystem"
+Screen.ResetOnSpawn = false
+Screen.IgnoreGuiInset = true
+Screen.Parent = GetGuiParent()
+
+local Main = Instance.new("Frame")
+Main.Size = UDim2.fromOffset(380, 340)
+Main.Position = UDim2.fromScale(0.5, 0.5)
+Main.AnchorPoint = Vector2.new(0.5, 0.5)
+Main.BackgroundColor3 = Color3.fromRGB(6, 5, 10)
+Main.BackgroundTransparency = 0.05
+Main.Parent = Screen
+local mc = Instance.new("UICorner"); mc.CornerRadius = UDim.new(0, 20); mc.Parent = Main
+local ms = Instance.new("UIStroke"); ms.Thickness = 1.4; ms.Color = cfg.accentA; ms.Parent = Main
+
+local Titlebar = Instance.new("Frame")
+Titlebar.Size = UDim2.new(1, 0, 0, 36)
+Titlebar.BackgroundColor3 = Color3.fromRGB(11, 9, 17)
+Titlebar.BackgroundTransparency = 0.35
+Titlebar.Parent = Main
+local Title = Instance.new("TextLabel")
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.fromOffset(14, 0)
+Title.Size = UDim2.new(1, -50, 1, 0)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 13
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.TextColor3 = Color3.fromRGB(205, 200, 218)
+Title.Text = "QyrexApi KeySystem"
+Title.Parent = Titlebar
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.fromOffset(24, 24)
+CloseBtn.Position = UDim2.new(1, -30, 0.5, -12)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(18, 14, 28)
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.fromRGB(200, 190, 210)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 12
+CloseBtn.Parent = Titlebar
+local cc = Instance.new("UICorner"); cc.CornerRadius = UDim.new(1, 0); cc.Parent = CloseBtn
+CloseBtn.MouseButton1Click:Connect(function() Screen:Destroy() end)
+
+local Head = Instance.new("TextLabel")
+Head.BackgroundTransparency = 1
+Head.Position = UDim2.fromOffset(16, 150)
+Head.Size = UDim2.new(1, -32, 0, 22)
+Head.Font = Enum.Font.GothamBold
+Head.TextSize = 16
+Head.TextColor3 = Color3.fromRGB(244, 242, 250)
+Head.Text = "Verificacion de acceso"
+Head.Parent = Main
+
+local Sub = Instance.new("TextLabel")
+Sub.BackgroundTransparency = 1
+Sub.Position = UDim2.fromOffset(16, 172)
+Sub.Size = UDim2.new(1, -32, 0, 16)
+Sub.Font = Enum.Font.Gotham
+Sub.TextSize = 12
+Sub.TextColor3 = Color3.fromRGB(150, 145, 165)
+Sub.Text = "Ingresa tu key para continuar"
+Sub.Parent = Main
+
+local InputFrame = Instance.new("Frame")
+InputFrame.Size = UDim2.new(1, -32, 0, 44)
+InputFrame.Position = UDim2.fromOffset(16, 200)
+InputFrame.BackgroundColor3 = Color3.fromRGB(3, 2, 6)
+InputFrame.Parent = Main
+local ic = Instance.new("UICorner"); ic.CornerRadius = UDim.new(0, 10); ic.Parent = InputFrame
+local ist = Instance.new("UIStroke"); ist.Color = cfg.accentA; ist.Thickness = 1.2; ist.Parent = InputFrame
+
+local KeyBox = Instance.new("TextBox")
+KeyBox.Size = UDim2.new(1, -20, 1, 0)
+KeyBox.Position = UDim2.fromOffset(12, 0)
+KeyBox.BackgroundTransparency = 1
+KeyBox.Text = loadKey()
+KeyBox.PlaceholderText = "00000000-0000-0000-0000-000000000000"
+KeyBox.PlaceholderColor3 = Color3.fromRGB(100, 96, 118)
+KeyBox.TextColor3 = Color3.fromRGB(232, 228, 244)
+KeyBox.TextSize = 13
+KeyBox.Font = Enum.Font.Code
+KeyBox.TextXAlignment = Enum.TextXAlignment.Left
+KeyBox.ClearTextOnFocus = false
+KeyBox.Parent = InputFrame
+
+local GetKeyBtn = Instance.new("TextButton")
+GetKeyBtn.Size = UDim2.new(0.42, -5, 0, 42)
+GetKeyBtn.Position = UDim2.fromOffset(16, 254)
+GetKeyBtn.BackgroundColor3 = Color3.fromRGB(16, 13, 24)
+GetKeyBtn.Text = "Get Key"
+GetKeyBtn.TextColor3 = Color3.fromRGB(255,255,255)
+GetKeyBtn.Font = Enum.Font.GothamBold
+GetKeyBtn.TextSize = 13
+GetKeyBtn.Parent = Main
+local gk = Instance.new("UICorner"); gk.CornerRadius = UDim.new(0, 10); gk.Parent = GetKeyBtn
+local gks = Instance.new("UIStroke"); gks.Color = cfg.accentC; gks.Parent = GetKeyBtn
+
+local VerifyBtn = Instance.new("TextButton")
+VerifyBtn.Size = UDim2.new(0.58, -5, 0, 42)
+VerifyBtn.Position = UDim2.new(0.42, 21, 0, 254)
+VerifyBtn.BackgroundColor3 = Color3.fromRGB(88, 40, 160)
+VerifyBtn.Text = "Verify"
+VerifyBtn.TextColor3 = Color3.fromRGB(255,255,255)
+VerifyBtn.Font = Enum.Font.GothamBold
+VerifyBtn.TextSize = 13
+VerifyBtn.Parent = Main
+local vk = Instance.new("UICorner"); vk.CornerRadius = UDim.new(0, 10); vk.Parent = VerifyBtn
+
+local Hint = Instance.new("TextLabel")
+Hint.BackgroundTransparency = 1
+Hint.Position = UDim2.fromOffset(16, 308)
+Hint.Size = UDim2.new(1, -32, 0, 18)
+Hint.Font = Enum.Font.Gotham
+Hint.TextSize = 10
+Hint.TextColor3 = Color3.fromRGB(110, 105, 128)
+Hint.Text = "Get Key abre Linkvertise / Lootlabs / Work.ink · key unica"
+Hint.Parent = Main
+
+GetKeyBtn.MouseButton1Click:Connect(function()
+  local link = QyrexAPI.GetKeyLink()
+  if not link or link == "" then
+    notify("Error", "No configurado", "El owner no puso link de key")
+    return
+  end
+  notify("Info", "Getting Key...", "Abriendo link de key")
+  if setclipboard then pcall(setclipboard, link) end
+  local opened = false
+  if typeof(open_browser) == "function" then pcall(open_browser, link); opened = true end
+  if not opened and typeof(request) == "function" then
+    -- algunos executors
+  end
+  notify("Success", "Link listo", "Link copiado. Completa el checkpoint y pega tu key.")
+end)
+
+local verifying = false
+local function doVerify()
+  if verifying then return end
+  local key = KeyBox.Text:gsub("%s+", "")
+  if key == "" then notify("Error", "Key Required", "Ingresa una key"); return end
+  verifying = true
+  notify("Info", "Checking...", "Validando key")
+  task.spawn(function()
+    local ok = QyrexAPI.VerifyKey(key)
+    verifying = false
+    if ok then
+      saveKey(key)
+      notify("Success", "Success!", "Key verificada")
+      Screen:Destroy()
+      task.wait(0.15)
+      runScript()
+    else
+      notify("Error", "Invalid Key", "Key incorrecta o expirada")
+    end
+  end)
+end
+VerifyBtn.MouseButton1Click:Connect(doVerify)
+KeyBox.FocusLost:Connect(function(enter) if enter then doVerify() end end)
+
+-- drag
+do
+  local dragging, start, pos
+  Titlebar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+      dragging = true; start = input.Position; pos = Main.Position
+    end
+  end)
+  UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+      local d = input.Position - start
+      Main.Position = UDim2.new(pos.X.Scale, pos.X.Offset + d.X, pos.Y.Scale, pos.Y.Offset + d.Y)
+    end
+  end)
+  UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+  end)
+end
+`;
+}
+
+function claimPageHtml(key, providerName, hours) {
+  const k = String(key).replace(/</g, '');
+  const p = String(providerName || 'Qrex').replace(/</g, '');
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Tu Key · QrexApi</title>
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a0f;font-family:Inter,system-ui,sans-serif;color:#e8e8f0;padding:16px}
+.card{background:#12121c;border:1px solid #2a2a3d;border-radius:18px;padding:28px;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.badge{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.08em;color:#a78bfa;background:rgba(124,58,237,.15);border:1px solid rgba(124,58,237,.35);padding:4px 10px;border-radius:999px;margin-bottom:12px}
+h1{font-size:20px;margin:0 0 8px}p{color:#8b8b9e;font-size:13px;line-height:1.5}
+.keybox{margin-top:16px;background:#0c0c14;border:1px solid #2a2a3d;border-radius:12px;padding:14px;font-family:ui-monospace,monospace;font-size:13px;word-break:break-all;color:#c4b5fd}
+button{margin-top:14px;width:100%;border:0;border-radius:12px;padding:12px;font-weight:700;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;cursor:pointer}
+.meta{margin-top:12px;font-size:11px;color:#5a5a6e}
+</style></head><body><div class="card">
+<div class="badge">QYREXAPI KEY</div>
+<h1>Key generada</h1>
+<p>Provider: <b style="color:#ddd">${p}</b>. Copia la key y pégala en el KeySystem del script.</p>
+<div class="keybox" id="k">${k}</div>
+<button onclick="navigator.clipboard.writeText(document.getElementById('k').innerText);this.textContent='¡Copiada!'">Copiar key</button>
+<div class="meta">Validez aprox: ${hours || 24}h · cada visita genera una key unica</div>
+</div></body></html>`;
+}
+
+app.get('/getkey/:providerId', needMongo, async (req, res) => {
+  try {
+    const prov = await Provider.findById(req.params.providerId);
+    if (!prov || !prov.enabled) return res.status(404).type('html').send('<h1>Provider no encontrado</h1>');
+    const ip = clientIp(req);
+    // rate: max 5 keys / 10 min per IP+provider
+    if (!global.__claimHits) global.__claimHits = new Map();
+    const ck = ip + ':' + prov._id;
+    const now = Date.now();
+    let e = global.__claimHits.get(ck);
+    if (!e || now - e.t > 10 * 60 * 1000) e = { n: 0, t: now };
+    e.n++;
+    global.__claimHits.set(ck, e);
+    if (e.n > 8) return res.status(429).type('html').send('<h1>Demasiadas keys. Espera unos minutos.</h1>');
+
+    const hours = prov.keyValidityHours || 24;
+    let expiresAt = null;
+    if (hours > 0) {
+      expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + hours);
+    }
+    const doc = await LicenseKey.create({
+      key: genKey(),
+      providerId: String(prov._id),
+      providerName: prov.name,
+      ownerId: prov.ownerId,
+      hwidLimit: prov.hwidLimit || 1,
+      expiresAt,
+      note: 'claimed:' + String(ip).split(',')[0]
+    });
+    res.type('html').send(claimPageHtml(doc.key, prov.name, hours));
+  } catch (e) {
+    console.error(e);
+    res.status(500).type('html').send('<h1>Error generando key</h1>');
+  }
+});
+
+app.get('/api/keys/claim-info/:providerId', needMongo, async (req, res) => {
+  const prov = await Provider.findById(req.params.providerId).lean();
+  if (!prov) return res.status(404).json({ error: 'No encontrado' });
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const claimUrl = proto + '://' + host + '/getkey/' + prov._id;
+  res.json({
+    providerId: prov._id,
+    name: prov.name,
+    linkType: prov.linkType || 'custom',
+    adLink: prov.adLink || '',
+    claimUrl,
+    tip: 'Pon claimUrl como destino final de Linkvertise / Lootlabs / Work.ink'
+  });
+});
+
 
 app.get('/api/keys', auth, needMongo, async (req, res) => {
   const q = { ownerId: req.user.sub };
