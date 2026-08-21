@@ -15,12 +15,10 @@ const MONGO_URI = process.env.MONGO_URI || '';
 const VOLTILS_URL = process.env.VOLTILS_URL || 'https://voltils.nxtdev.xyz/v1/obfuscate';
 const VOLTILS_KEY = process.env.VOLTILS_KEY || 'voltils_1267954195982581782_b24de9d9410f9e7a0dcb7db05b18cda598f9415f';
 const VOLTILS_PRESET = process.env.VOLTILS_PRESET || 'normal';
+const FAILED_URL = process.env.FAILED_URL || 'https://script-obfuscator-api.vercel.app/api/obfuscate';
+const FAILED_KEY = process.env.FAILED_KEY || 'nf_FKKQbi96FCnxiRnrx5X5MRdmpXp2-GcJDdZMOcgGlR4';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/auto';
-
-const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1540116209348116491';
-const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || '';
-const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || 'https://qyrex.hopto.org/auth/discord/callback';
 
 const PORT = process.env.PORT || 10000;
 
@@ -144,8 +142,6 @@ mongoose.connection.on('error', (e) => { mongoReady = false; console.error('Mong
 const User = mongoose.models.QrexUser || mongoose.model('QrexUser', new mongoose.Schema({
   username: { type: String, unique: true, required: true, lowercase: true, trim: true },
   passwordHash: { type: String, required: true },
-  discordId: { type: String, default: null, index: true },
-  avatar: { type: String, default: '' },
   role: { type: String, default: 'user' }, // user | admin
   premium: { type: Boolean, default: false },
   premiumUntil: { type: Date, default: null },
@@ -471,6 +467,50 @@ async function obfuscateWithVoltils(code) {
   return String(out);
 }
 
+
+async function obfuscateWithFailed(code) {
+  if (!FAILED_KEY) throw new Error('FAILED_KEY no configurada');
+  const r = await fetch(FAILED_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + FAILED_KEY,
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify({
+      code: String(code || ''),
+      options: {
+        vmType: 'register',
+        vmLevel: 'max',
+        scramble: true,
+        noPreserve: true,
+        encodeStrings: true,
+        noRename: true
+      }
+    }),
+    signal: AbortSignal.timeout(120000)
+  });
+  const text = await r.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch {}
+  let out = null;
+  if (data) {
+    if (typeof data === 'string') out = data;
+    else if (typeof data.code === 'string') out = data.code;
+    else if (typeof data.result === 'string') out = data.result;
+    else if (typeof data.obfuscated === 'string') out = data.obfuscated;
+    else if (typeof data.output === 'string') out = data.output;
+    else if (data.data && typeof data.data === 'string') out = data.data;
+    else if (data.data && typeof data.data.code === 'string') out = data.data.code;
+  }
+  if (!out && text && !text.trim().startsWith('{') && !text.trim().startsWith('[')) out = text;
+  if (!r.ok || !out) {
+    const err = (data && (data.error || data.message || data.detail)) || ('Failed API HTTP ' + r.status + (text ? ': ' + text.slice(0, 120) : ''));
+    throw new Error(String(err));
+  }
+  return String(out);
+}
+
 function xorBytes(buf, key) {
   const out = Buffer.alloc(buf.length);
   for (let i = 0; i < buf.length; i++) out[i] = buf[i] ^ key[i % key.length];
@@ -485,19 +525,29 @@ function wrapWithEnvLogger(source) {
 }
 
 async function resolveObfuscated(source, mode) {
-  // Ofuscación obligatoria vía Voltils API. Sin env logger.
   const src = String(source || '');
+  let m = String(mode || 'voltils').toLowerCase();
+  // aliases
+  if (m === 'qrex') m = 'voltils';
+  if (m === 'local') m = 'failed';
+  if (!['none', 'voltils', 'failed'].includes(m)) m = 'voltils';
+
+  if (m === 'none') {
+    return { code: src, doObfuscate: false, obfMode: 'none' };
+  }
+
   try {
-    let code = await obfuscateWithVoltils(src);
-    code = String(code || '');
-    if (!code.trim().startsWith('-- Protected by Voltils')) {
-      code = '-- Protected by Voltils · https://discord.gg/f4HRYHTCnz\n' + code;
+    let code;
+    if (m === 'failed') {
+      code = await obfuscateWithFailed(src);
+    } else {
+      code = await obfuscateWithVoltils(src);
     }
-    return { code, doObfuscate: true, obfMode: 'qrex' };
+    code = String(code || '');
+    return { code, doObfuscate: true, obfMode: m };
   } catch (e) {
-    console.error('Obfuscator fail:', e.message);
-    // Re-lanzar para que el create muestre error (no guardar sin ofuscar)
-    throw new Error('Ofuscación falló: ' + (e.message || 'error'));
+    console.error('Obfuscator fail (' + m + '):', e.message);
+    throw new Error('Ofuscación falló (' + m + '): ' + (e.message || 'error'));
   }
 }
 
@@ -636,9 +686,7 @@ app.post('/api/auth/login', needMongo, async (req, res) => {
         id: doc._id,
         username: doc.username,
         role: doc.role || 'user',
-        premium: isPremiumUser(doc),
-        avatar: doc.avatar || '',
-        discordId: doc.discordId || null
+        premium: isPremiumUser(doc)
       }
     });
   } catch (e) {
@@ -659,9 +707,7 @@ app.get('/api/me', auth, needMongo, async (req, res) => {
     id: user._id,
     username: user.username,
     role: user.role || 'user',
-    premium: isPremiumUser(user),
-    avatar: user.avatar || '',
-    discordId: user.discordId || null
+    premium: isPremiumUser(user)
   });
 });
 
@@ -711,9 +757,11 @@ app.post('/api/scripts', auth, needMongo, async (req, res) => {
     let obfMode = (req.body?.obfMode || '').toString();
     if (!obfMode) {
       const wantObf = req.body?.doObfuscate !== false && req.body?.doObfuscate !== 'false';
-      obfMode = wantObf ? 'qrex' : 'none';
+      obfMode = wantObf ? 'voltils' : 'none';
     }
-    if (!['none', 'qrex', 'local'].includes(obfMode)) obfMode = 'qrex';
+    if (obfMode === 'qrex') obfMode = 'voltils';
+    if (obfMode === 'local') obfMode = 'failed';
+    if (!['none', 'voltils', 'failed'].includes(obfMode)) obfMode = 'voltils';
     const resolved = await resolveObfuscated(source, obfMode);
     const doc = await Script.create({
       ownerId: req.user.sub,
@@ -776,21 +824,26 @@ app.put('/api/scripts/:id', auth, needMongo, async (req, res) => {
         s.providerId = ''; s.providerName = '';
       }
     }
-    if (req.body?.obfMode && ['none','qrex','local'].includes(req.body.obfMode)) {
-      s.obfMode = req.body.obfMode;
-      s.doObfuscate = s.obfMode !== 'none';
+    if (req.body?.obfMode) {
+      let om = String(req.body.obfMode).toLowerCase();
+      if (om === 'qrex') om = 'voltils';
+      if (om === 'local') om = 'failed';
+      if (['none','voltils','failed'].includes(om)) {
+        s.obfMode = om;
+        s.doObfuscate = om !== 'none';
+      }
     } else if (req.body?.doObfuscate !== undefined) {
       s.doObfuscate = req.body.doObfuscate !== false && req.body.doObfuscate !== 'false';
-      s.obfMode = s.doObfuscate ? (s.obfMode === 'local' ? 'local' : 'qrex') : 'none';
+      s.obfMode = s.doObfuscate ? (s.obfMode === 'failed' ? 'failed' : 'voltils') : 'none';
     }
     if (source) {
       s.source = source;
-      const resolved = await resolveObfuscated(source, 'qrex');
+      const resolved = await resolveObfuscated(source, s.obfMode || 'voltils');
       s.obfuscated = resolved.code;
       s.doObfuscate = resolved.doObfuscate;
       s.obfMode = resolved.obfMode;
     } else if ((req.body?.obfMode || req.body?.doObfuscate !== undefined) && s.source) {
-      const resolved = await resolveObfuscated(s.source, 'qrex');
+      const resolved = await resolveObfuscated(s.source, s.obfMode || 'voltils');
       s.obfuscated = resolved.code;
       s.doObfuscate = resolved.doObfuscate;
       s.obfMode = resolved.obfMode;
@@ -819,7 +872,7 @@ function buildDoubleLinkStub(cacheUrl) {
   }
   return [
     '-- QrexApi Protected Loader',
-    '-- Protected by Voltils · https://discord.gg/f4HRYHTCnz',
+    '-- QrexApi Protected Loader',
     ...junk,
     'local function _g()',
     '  local u="' + u + '"',
@@ -860,8 +913,7 @@ a{color:#a78bfa;text-decoration:none}a:hover{text-decoration:underline}
 </style></head><body><div class="card"><div class="badge">ACCESS DENIED</div>
 <h1>Protected by QrexApi</h1>
 <p>This lua script cannot be viewed in a browser.</p>
-<p class="cred">Ofuscacion y proteccion por <b style="color:#c4b5fd">Voltils</b><br/>
-<a href="https://discord.gg/f4HRYHTCnz" target="_blank" rel="noopener">discord.gg/f4HRYHTCnz</a></p>
+
 </div></body></html>`;
 
 async function serveRealScript(req, res, scriptId) {
@@ -1283,7 +1335,6 @@ function buildKeyGateLua({ apiBase, providerName, getKeyLink, scriptCode }) {
   const close = ']' + eq + ']';
 
   return `-- QrexApi Key System
--- Protected by Voltils · https://discord.gg/f4HRYHTCnz
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -1625,7 +1676,6 @@ button{margin-top:14px;width:100%;border:0;border-radius:12px;padding:12px;font-
 <p>Provider: <b style="color:#ddd">${p}</b>. Copia la key y pégala en el KeySystem del script.</p>
 <div class="keybox" id="k">${k}</div>
 <button onclick="navigator.clipboard.writeText(document.getElementById('k').innerText);this.textContent='¡Copiada!'">Copiar key</button>
-<div class="meta">Protected by <b style="color:#c4b5fd">Voltils</b> · <a href="https://discord.gg/f4HRYHTCnz" style="color:#a78bfa">Discord</a></div>
 <div class="meta">Validez aprox: ${hours || 24}h · cada visita genera una key unica</div>
 </div></body></html>`;
 }
@@ -2029,84 +2079,6 @@ app.get('/api/ai/status', auth, (req, res) => {
 
 app.get('/api/env-logger', (req, res) => {
   res.type('text/plain').send(ENV_GATE_LUA);
-});
-
-
-// ===== DISCORD OAUTH =====
-function discordAuthorizeUrl(state) {
-  const params = new URLSearchParams({
-    client_id: DISCORD_CLIENT_ID,
-    response_type: 'code',
-    redirect_uri: DISCORD_REDIRECT_URI,
-    scope: 'identify',
-    prompt: 'consent'
-  });
-  if (state) params.set('state', state);
-  return 'https://discord.com/api/oauth2/authorize?' + params.toString();
-}
-
-app.get('/auth/discord', (req, res) => {
-  res.redirect(discordAuthorizeUrl(crypto.randomBytes(8).toString('hex')));
-});
-
-app.get('/auth/discord/callback', async (req, res) => {
-  const fail = (msg) => res.redirect('/?discord_error=' + encodeURIComponent(msg));
-  try {
-    const code = String(req.query.code || '');
-    if (!code) return fail('Discord no devolvio el code');
-    if (!DISCORD_CLIENT_SECRET) return fail('Falta DISCORD_CLIENT_SECRET en el servidor');
-    if (mongoose.connection.readyState !== 1) return fail('Base de datos no disponible');
-
-    const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: DISCORD_CLIENT_ID,
-        client_secret: DISCORD_CLIENT_SECRET,
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: DISCORD_REDIRECT_URI
-      })
-    });
-    const tokenData = await tokenRes.json().catch(() => ({}));
-    if (!tokenRes.ok || !tokenData.access_token) {
-      return fail('Discord token: ' + (tokenData.error_description || tokenData.error || tokenRes.status));
-    }
-
-    const meRes = await fetch('https://discord.com/api/users/@me', {
-      headers: { Authorization: 'Bearer ' + tokenData.access_token }
-    });
-    const me = await meRes.json().catch(() => ({}));
-    if (!meRes.ok || !me.id) return fail('No se pudo leer el perfil de Discord');
-
-    let doc = await User.findOne({ discordId: me.id });
-    if (!doc) {
-      let base = String(me.username || ('dc' + me.id)).toLowerCase().replace(/[^a-z0-9_]/g, '');
-      if (base.length < 3) base = 'dc' + me.id.slice(-6);
-      let username = base;
-      let i = 0;
-      while (await User.findOne({ username })) {
-        i += 1;
-        username = (base + i).slice(0, 24);
-      }
-      doc = await User.create({
-        username,
-        passwordHash: hashPassword(crypto.randomBytes(24).toString('hex')),
-        discordId: me.id,
-        avatar: me.avatar ? ('https://cdn.discordapp.com/avatars/' + me.id + '/' + me.avatar + '.png') : '',
-        role: 'user'
-      });
-    } else if (me.avatar) {
-      doc.avatar = 'https://cdn.discordapp.com/avatars/' + me.id + '/' + me.avatar + '.png';
-      await doc.save();
-    }
-
-    const jwtToken = signToken(doc);
-    return res.redirect('/?token=' + encodeURIComponent(jwtToken));
-  } catch (e) {
-    console.error('discord oauth', e);
-    return fail(e.message || 'Error inesperado');
-  }
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
