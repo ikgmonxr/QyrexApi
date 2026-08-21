@@ -284,6 +284,90 @@ const LicenseKey = mongoose.models.QrexLicenseKey || mongoose.model('QrexLicense
   createdAt: { type: Date, default: Date.now }
 }));
 
+
+const VipCode = mongoose.models.QrexVipCode || mongoose.model('QrexVipCode', new mongoose.Schema({
+  code: { type: String, unique: true, required: true, uppercase: true, trim: true },
+  days: { type: Number, default: 10 },
+  used: { type: Boolean, default: false },
+  usedBy: { type: String, default: null },
+  usedAt: { type: Date, default: null },
+  createdBy: { type: String, default: 'system' },
+  note: { type: String, default: '' },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const BOOTSTRAP_VIP_KEYS = [
+  "QYREX-VIP-E13F-520E-164079",
+  "QYREX-VIP-4EC0-79EE-C72E92",
+  "QYREX-VIP-B1FC-1CFB-928515",
+  "QYREX-VIP-1BAB-2B17-E385B8",
+  "QYREX-VIP-D567-E462-7B586A",
+  "QYREX-VIP-E02B-C3AA-EAA997",
+  "QYREX-VIP-5F4A-B79E-093EC1",
+  "QYREX-VIP-705A-0FBE-F807A9",
+  "QYREX-VIP-B72D-EC5C-25EE03",
+  "QYREX-VIP-0357-C159-B37CAB",
+  "QYREX-VIP-6845-6F86-A6AA32",
+  "QYREX-VIP-CA88-B276-7AD428",
+  "QYREX-VIP-957A-8576-3005B1",
+  "QYREX-VIP-D9C8-404C-84374A",
+  "QYREX-VIP-B48C-511B-42069C",
+  "QYREX-VIP-2A97-76F0-DA3DAD",
+  "QYREX-VIP-37EA-A4DE-04F9CC",
+  "QYREX-VIP-51CE-DCDA-FE352C",
+  "QYREX-VIP-72F0-07BF-E27516",
+  "QYREX-VIP-51E8-954E-06A868",
+  "QYREX-VIP-7BAF-CE84-E9F4E9",
+  "QYREX-VIP-F062-E538-9CE073",
+  "QYREX-VIP-6CEC-4362-694B38",
+  "QYREX-VIP-6B16-BADE-FEEC7F",
+  "QYREX-VIP-A24C-CF36-F986A8",
+  "QYREX-VIP-F1E1-C28A-C1783B",
+  "QYREX-VIP-6257-6E1A-977A02",
+  "QYREX-VIP-7BF7-6E70-B9DD8B",
+  "QYREX-VIP-D1D9-942F-21883B",
+  "QYREX-VIP-3881-4939-143D40",
+  "QYREX-VIP-FA48-7E1B-4B5B46",
+  "QYREX-VIP-9580-EC09-A36C4E",
+  "QYREX-VIP-F956-FE91-0DA808",
+  "QYREX-VIP-F420-8961-E26A8A",
+  "QYREX-VIP-7A6A-826B-A3EB2E",
+  "QYREX-VIP-E8DB-1DFD-BD1F75",
+  "QYREX-VIP-DFBE-1551-F2D4EB",
+  "QYREX-VIP-6C8B-AAA9-F05A61",
+  "QYREX-VIP-7FFE-1676-3AD751",
+  "QYREX-VIP-814E-7BB8-080F11",
+  "QYREX-VIP-5FAE-B230-6419A9",
+  "QYREX-VIP-6A6A-C171-095C8D",
+  "QYREX-VIP-518A-D491-EEA75E",
+  "QYREX-VIP-4B53-B67B-C90B60",
+  "QYREX-VIP-427E-6264-1E8A12",
+  "QYREX-VIP-64AC-46DC-BAF4A9",
+  "QYREX-VIP-DAF5-C082-F3F0A0",
+  "QYREX-VIP-B595-BCB7-F9E64A",
+  "QYREX-VIP-57D6-79C1-8EFB99",
+  "QYREX-VIP-55FF-14BD-3FFB06"
+];
+
+async function seedVipKeysIfEmpty() {
+  try {
+    if (mongoose.connection.readyState !== 1) return;
+    const count = await VipCode.countDocuments();
+    if (count > 0) return;
+    const docs = BOOTSTRAP_VIP_KEYS.map(code => ({
+      code: code.toUpperCase(),
+      days: 10,
+      note: 'batch-50-bootstrap',
+      createdBy: 'system'
+    }));
+    await VipCode.insertMany(docs, { ordered: false }).catch(() => {});
+    console.log('VIP keys seeded:', docs.length);
+  } catch (e) {
+    console.error('VIP seed error', e.message);
+  }
+}
+mongoose.connection.on('connected', () => { seedVipKeysIfEmpty(); });
+
 function genKey() {
   return crypto.randomUUID ? crypto.randomUUID() : [
     crypto.randomBytes(4).toString('hex'),
@@ -852,6 +936,88 @@ app.get(['/api/v1/luascripts/cache/public/:id/download', '/api/cache/:id', '/api
   }
   return serveRealScript(req, res, req.params.id);
 });
+
+
+// ========== VIP REDEEM ==========
+app.post('/api/vip/redeem', auth, needMongo, async (req, res) => {
+  try {
+    const code = String((req.body || {}).code || '').trim().toUpperCase();
+    if (!code || code.length < 6) return res.status(400).json({ error: 'Codigo invalido' });
+
+    const vip = await VipCode.findOne({ code });
+    if (!vip) return res.status(404).json({ error: 'Codigo no existe' });
+    if (vip.used) return res.status(400).json({ error: 'Codigo ya canjeado' });
+
+    const user = await User.findById(req.user.sub);
+    if (!user) return res.status(401).json({ error: 'Usuario no encontrado' });
+
+    const days = Math.max(1, Number(vip.days) || 10);
+    const now = new Date();
+    let base = now;
+    if (user.premium && user.premiumUntil && new Date(user.premiumUntil) > now) {
+      base = new Date(user.premiumUntil);
+    }
+    const until = new Date(base);
+    until.setDate(until.getDate() + days);
+
+    user.premium = true;
+    user.premiumUntil = until;
+    await user.save();
+
+    vip.used = true;
+    vip.usedBy = user.username;
+    vip.usedAt = now;
+    await vip.save();
+
+    res.json({
+      success: true,
+      premium: true,
+      premiumUntil: until,
+      days,
+      message: 'VIP activado por ' + days + ' dias'
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
+
+app.get('/api/vip/status', auth, needMongo, async (req, res) => {
+  const user = await User.findById(req.user.sub).lean();
+  if (!user) return res.status(401).json({ error: 'No auth' });
+  res.json({
+    premium: isPremiumUser(user),
+    premiumUntil: user.premiumUntil || null,
+    role: user.role
+  });
+});
+
+app.post('/api/admin/vip-keys', auth, needMongo, requireAdmin, async (req, res) => {
+  try {
+    const amount = Math.min(100, Math.max(1, Number((req.body || {}).amount) || 10));
+    const days = Math.max(1, Number((req.body || {}).days) || 10);
+    const note = String((req.body || {}).note || '').slice(0, 80);
+    const created = [];
+    for (let i = 0; i < amount; i++) {
+      const code = ('QYREX-VIP-' + crypto.randomBytes(2).toString('hex') + '-' + crypto.randomBytes(2).toString('hex') + '-' + crypto.randomBytes(3).toString('hex')).toUpperCase();
+      const doc = await VipCode.create({
+        code,
+        days,
+        note,
+        createdBy: req.user.username || req.user.sub
+      });
+      created.push({ code: doc.code, days: doc.days });
+    }
+    res.json({ keys: created });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error' });
+  }
+});
+
+app.get('/api/admin/vip-keys', auth, needMongo, requireAdmin, async (req, res) => {
+  const list = await VipCode.find().sort({ createdAt: -1 }).limit(200).lean();
+  res.json(list);
+});
+
 
 app.get('/api/stats', auth, needMongo, async (req, res) => {
   const scripts = await Script.find({ ownerId: req.user.sub });
