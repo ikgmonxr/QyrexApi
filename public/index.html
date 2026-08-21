@@ -457,6 +457,62 @@
     background: rgba(17,17,24,.55) !important;
   }
 
+
+  /* ===== PANEL DE PESTANAS OCULTO POR DEFECTO ===== */
+  .mobile-topbar{display:flex!important}
+  .sidebar-close-btn{display:inline-flex!important}
+  .sidebar{animation:none!important;
+    position:fixed!important;left:0;top:0;bottom:0;height:100%!important;
+    width:min(300px,88vw)!important;max-width:300px;
+    transform:translateX(-105%);transition:transform .3s cubic-bezier(.22,1,.36,1);
+    z-index:60!important;
+  }
+  body.sidebar-open .sidebar{transform:translateX(0)!important;box-shadow:20px 0 60px -20px rgba(0,0,0,.75)}
+  .sidebar-overlay{display:none}
+  .sidebar-overlay.show{display:block!important;z-index:55}
+  /* el contenedor del sidebar creaba un contexto de apilamiento que dejaba el
+     menu por debajo del overlay: los botones (Create Script, etc.) no recibian clics */
+  #appView > .flex{z-index:auto!important}
+  #appView main.main-content{margin-left:0!important;width:100%!important}
+  .mt-open{
+    display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;cursor:pointer;
+    border:1px solid rgba(124,58,237,.45);background:linear-gradient(135deg,rgba(124,58,237,.28),rgba(124,58,237,.10));
+    color:#d6c8ff;font-size:13.5px;font-weight:600;transition:transform .2s,box-shadow .2s,filter .2s;
+  }
+  .mt-open:hover{transform:translateY(-1px);filter:brightness(1.08);box-shadow:0 10px 26px -12px rgba(124,58,237,.8)}
+  .mt-open svg{width:18px;height:18px}
+
+  /* ===== OVERVIEW HERO ===== */
+  .ov-hero{
+    position:relative;overflow:hidden;border-radius:22px;padding:30px;
+    border:1px solid rgba(124,58,237,.28);
+    background:radial-gradient(120% 160% at 0% 0%,rgba(124,58,237,.28),transparent 60%),
+               linear-gradient(135deg,rgba(17,17,26,.95),rgba(10,10,16,.95));
+    box-shadow:0 30px 80px -50px rgba(124,58,237,.9);
+  }
+  .ov-hero::after{content:"";position:absolute;right:-90px;top:-90px;width:260px;height:260px;border-radius:50%;
+    background:rgba(124,58,237,.22);filter:blur(60px);pointer-events:none}
+  .ov-logo{width:64px;height:64px;border-radius:20px;object-fit:cover;border:1px solid rgba(124,58,237,.45);
+    box-shadow:0 14px 40px -16px rgba(124,58,237,.85)}
+  .ov-kicker{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#8b7bd8;font-weight:700}
+  .ov-title{font-size:clamp(26px,4vw,38px);font-weight:800;letter-spacing:-.03em;line-height:1.08;margin:8px 0 6px}
+  .ov-title em{font-style:normal;background:linear-gradient(90deg,#c4b5fd,#7c3aed);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .ov-sub{color:#8b8b9e;font-size:14px;max-width:46ch;line-height:1.6}
+  .ov-cta{
+    display:inline-flex;align-items:center;gap:10px;padding:14px 22px;border-radius:14px;border:none;cursor:pointer;
+    background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;font-weight:700;font-size:15px;
+    box-shadow:0 18px 44px -18px rgba(124,58,237,.95);transition:transform .2s,box-shadow .2s,filter .2s;
+  }
+  .ov-cta:hover{transform:translateY(-2px);filter:brightness(1.06)}
+  .ov-cta:active{transform:translateY(0) scale(.99)}
+  .ov-cta svg{width:18px;height:18px}
+  .ov-ghost{
+    display:inline-flex;align-items:center;gap:8px;padding:14px 18px;border-radius:14px;cursor:pointer;
+    border:1px solid #2a2a3d;background:rgba(17,17,24,.7);color:#c4b5fd;font-weight:600;font-size:14px;transition:all .2s}
+  .ov-ghost:hover{border-color:#7c3aed;color:#ddd3ff}
+  .ov-stat{position:relative;overflow:hidden;border-radius:18px;padding:20px;border:1px solid #1c1c28;background:rgba(17,17,24,.85)}
+  .ov-stat .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#6b6b80;font-weight:700}
+  .ov-stat .val{font-size:30px;font-weight:800;letter-spacing:-.02em;margin-top:8px}
 </style>
 </head>
 <body>
@@ -525,7 +581,7 @@
         <button id="tabReg" onclick="setTab('register')">Registrarse</button>
       </div>
 
-      <a class="lg-discord" href="https://discord.com/oauth2/authorize?client_id=1540116209348116491&amp;response_type=code&amp;redirect_uri=https%3A%2F%2Fqyrex.hopto.org%2Fauth%2Fdiscord%2Fcallback&amp;scope=applications.commands.permissions.update">
+      <a class="lg-discord" href="/auth/discord">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.4a9.6 9.6 0 0 0-9.6 9.6c0 1.72.45 3.33 1.25 4.73L2.4 21.6l5.05-1.22A9.55 9.55 0 0 0 12 21.6a9.6 9.6 0 0 0 0-19.2Zm-3.5 8.3c.72 0 1.3.62 1.3 1.38 0 .77-.58 1.39-1.3 1.39s-1.3-.62-1.3-1.39c0-.76.58-1.38 1.3-1.38Zm7 0c.72 0 1.3.62 1.3 1.38 0 .77-.58 1.39-1.3 1.39s-1.3-.62-1.3-1.39c0-.76.58-1.38 1.3-1.38Zm-7.6 4.9h8.2a4.2 4.2 0 0 1-8.2 0Z"/></svg>
         Continuar con Discord
       </a>
@@ -558,8 +614,9 @@
       <img src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="Qrex"/>
       <b>QrexApi</b>
     </div>
-    <button type="button" class="hamburger" id="menuBtn" aria-label="Menu" onclick="toggleSidebar()">
-      <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    <button type="button" class="mt-open" id="menuBtn" aria-label="Abrir panel de pestanas" onclick="toggleSidebar()">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      Abrir panel
     </button>
   </div>
   <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
@@ -687,26 +744,45 @@
       <div class="p-8">
         <!-- OVERVIEW -->
         <section id="page-overview" class="page">
-          <h1 class="text-2xl font-bold mb-6">Overview</h1>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl mb-8">
-            <div class="card p-5">
-              <div class="text-xs font-medium mb-2" style="color:#6b6b80">SCRIPTS</div>
-              <div class="stat-val" id="stScripts">0</div>
+          <div class="ov-hero">
+            <div class="flex flex-wrap items-center gap-5">
+              <img class="ov-logo" src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="QrexApi"/>
+              <div class="min-w-0">
+                <div class="ov-kicker">QrexApi &middot; Panel privado</div>
+                <h1 class="ov-title">Tus scripts,<br/><em>bajo control.</em></h1>
+                <p class="ov-sub">Sube tu Lua, ofuscalo con Voltils, genera keys con HWID y mira quien lo ejecuta en vivo.</p>
+              </div>
             </div>
-            <div class="card p-5">
-              <div class="text-xs font-medium mb-2" style="color:#6b6b80">Ejecuciones totales</div>
-              <div class="stat-val" style="color:#a78bfa" id="stExec">0</div>
+            <div class="flex flex-wrap gap-3 mt-7">
+              <button type="button" class="ov-cta" onclick="resetCreateForm();go('create')">
+                <svg fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
+                Create Script
+              </button>
+              <button type="button" class="ov-ghost" onclick="go('scripts')">Mis scripts</button>
+              <button type="button" class="ov-ghost" onclick="toggleSidebar()">Abrir panel</button>
             </div>
-            <div class="card p-5">
-              <div class="text-xs font-medium mb-2" style="color:#6b6b80">Estado</div>
-              <div class="flex items-center gap-2 mt-3">
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
+            <div class="ov-stat">
+              <div class="lbl">Scripts</div>
+              <div class="val" id="stScripts">0</div>
+            </div>
+            <div class="ov-stat">
+              <div class="lbl">Ejecuciones totales</div>
+              <div class="val" style="color:#a78bfa" id="stExec">0</div>
+            </div>
+            <div class="ov-stat">
+              <div class="lbl">Estado</div>
+              <div class="flex items-center gap-2 mt-4">
                 <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-                <span class="text-sm font-medium text-emerald-400">Online</span>
+                <span class="text-sm font-semibold text-emerald-400">Online</span>
               </div>
             </div>
           </div>
-          <div class="card p-5 max-w-4xl">
-            <div class="text-sm font-semibold mb-4">Ejecuciones (últimos 7 días)</div>
+
+          <div class="card p-5 mt-6">
+            <div class="text-sm font-semibold mb-4">Ejecuciones (ultimos 7 dias)</div>
             <canvas id="chartOverview" height="120"></canvas>
           </div>
         </section>
@@ -1354,16 +1430,35 @@ function setTab(m){
   document.getElementById('loginErr').classList.add('hidden');
 }
 
+function setAvatar(el, user, name){
+  if (!el) return;
+  const url = user && (user.avatar || user.avatarUrl);
+  const letter = (name || '?').charAt(0).toUpperCase();
+  el.textContent = '';
+  if (url) {
+    el.style.padding = '0';
+    el.style.overflow = 'hidden';
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = name || 'avatar';
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+    img.onerror = function(){ el.textContent = letter; };
+    el.appendChild(img);
+  } else {
+    el.textContent = letter;
+  }
+}
+
 function showApp(user){
   currentUser = user || {};
   document.getElementById('loginView').style.display = 'none';
   document.getElementById('appView').style.display = 'block';
   const name = user?.username || '?';
   document.getElementById('userLabel').textContent = name;
-  document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+  setAvatar(document.getElementById('userAvatar'), user, name);
   const sa = document.getElementById('settingsAvatar');
   const su = document.getElementById('settingsUser');
-  if (sa) sa.textContent = name.charAt(0).toUpperCase();
+  setAvatar(sa, user, name);
   if (su) su.textContent = name;
   // badges
   const badgeEl = document.getElementById('userBadges');
@@ -1643,6 +1738,21 @@ document.addEventListener('keydown', e => {
 window.onload = function(){
   try { refreshAiChips(); updateLines(); } catch(e) {}
 
+  // Login con Discord: el servidor vuelve con ?token=... o ?discord_error=...
+  try {
+    const qs = new URLSearchParams(location.search);
+    const t = qs.get('token');
+    const derr = qs.get('discord_error');
+    if (t) {
+      token = t;
+      localStorage.setItem('qrex_token', t);
+      history.replaceState({}, '', location.pathname);
+    } else if (derr) {
+      history.replaceState({}, '', location.pathname);
+      setTimeout(() => { try { setErr('Discord: ' + derr); } catch(e) {} }, 50);
+    }
+  } catch(e) {}
+
   if (token) {
     fetch('/api/me', { headers: headers() })
       .then(r => r.ok ? r.json() : Promise.reject())
@@ -1654,7 +1764,7 @@ window.onload = function(){
 const pageNames = { overview:'Overview', scripts:'Lua Scripts', hub:'Script Hub', keys:'Key System', webhooks:'Webhooks', leaderboard:'Leaderboard', assets:'My Assets', templates:'Templates', status:'System Status', playground:'API Playground', changelog:'Changelog', create:'Create Script', studio:'Studio', executions:'Analytics', apiinfo:'API Info', settings:'Settings', admin:'Admin Panel' };
 
 
-function isMobileNav(){ return window.matchMedia('(max-width: 900px)').matches; }
+function isMobileNav(){ return true; }
 function openSidebar(){
   document.body.classList.add('sidebar-open');
   const ov = document.getElementById('sidebarOverlay');
@@ -1695,14 +1805,13 @@ function go(p){
 
 
 window.addEventListener('resize', function(){
-  if (!isMobileNav()) closeSidebar();
   // keep main margin desktop
   var main = document.querySelector('#appView main.main-content');
-  if (main) main.style.marginLeft = isMobileNav() ? '0' : '260px';
+  if (main) main.style.marginLeft = '0';
 });
 document.addEventListener('DOMContentLoaded', function(){
   var main = document.querySelector('#appView main.main-content');
-  if (main) main.style.marginLeft = isMobileNav() ? '0' : '260px';
+  if (main) main.style.marginLeft = '0';
 });
 
 function esc(t){ const d=document.createElement('div'); d.textContent=t||''; return d.innerHTML; }
