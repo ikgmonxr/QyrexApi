@@ -143,6 +143,7 @@ const User = mongoose.models.QrexUser || mongoose.model('QrexUser', new mongoose
   role: { type: String, default: 'user' }, // user | admin
   premium: { type: Boolean, default: false },
   premiumUntil: { type: Date, default: null },
+  lastVipRedeemAt: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now }
 }));
 
@@ -951,8 +952,24 @@ app.post('/api/vip/redeem', auth, needMongo, async (req, res) => {
     const user = await User.findById(req.user.sub);
     if (!user) return res.status(401).json({ error: 'Usuario no encontrado' });
 
-    const days = Math.max(1, Number(vip.days) || 10);
     const now = new Date();
+    const COOLDOWN_MS = 5 * 60 * 60 * 1000; // 5 horas
+    if (user.lastVipRedeemAt) {
+      const elapsed = now - new Date(user.lastVipRedeemAt);
+      if (elapsed < COOLDOWN_MS) {
+        const left = COOLDOWN_MS - elapsed;
+        const hours = Math.floor(left / 3600000);
+        const mins = Math.ceil((left % 3600000) / 60000);
+        const wait = hours > 0 ? (hours + 'h ' + mins + 'm') : (mins + ' min');
+        return res.status(429).json({
+          error: 'Cooldownoldown activo. Puedes canjear otra key en ' + wait,
+          retryAfterMs: left,
+          retryAfterHours: Math.ceil(left / 3600000)
+        });
+      }
+    }
+
+    const days = Math.max(1, Number(vip.days) || 10);
     let base = now;
     if (user.premium && user.premiumUntil && new Date(user.premiumUntil) > now) {
       base = new Date(user.premiumUntil);
@@ -962,6 +979,7 @@ app.post('/api/vip/redeem', auth, needMongo, async (req, res) => {
 
     user.premium = true;
     user.premiumUntil = until;
+    user.lastVipRedeemAt = now;
     await user.save();
 
     vip.used = true;
@@ -974,7 +992,8 @@ app.post('/api/vip/redeem', auth, needMongo, async (req, res) => {
       premium: true,
       premiumUntil: until,
       days,
-      message: 'VIP activado por ' + days + ' dias'
+      nextRedeemAt: new Date(now.getTime() + COOLDOWN_MS),
+      message: 'VIP activado por ' + days + ' dias. Proximo canje en 5 horas.'
     });
   } catch (e) {
     res.status(500).json({ error: e.message || 'Error' });
