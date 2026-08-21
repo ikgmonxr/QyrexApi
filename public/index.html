@@ -950,6 +950,17 @@ local Players = game:GetService(&quot;Players&quot;)
             </div>
           </div>
 
+          <div class="card p-6 mb-6 max-w-xl">
+            <div class="text-sm font-semibold mb-1" style="color:#fbbf24">Llaves VIP (canje)</div>
+            <p class="text-xs mb-3" style="color:#5a5a6e">Genera códigos. Cada uno da VIP al canjearlos en Settings.</p>
+            <div class="flex flex-wrap gap-2 mb-3">
+              <input id="vipGenAmount" type="number" value="10" min="1" max="100" style="max-width:100px" placeholder="cantidad"/>
+              <input id="vipGenDays" type="number" value="10" min="1" style="max-width:100px" placeholder="días"/>
+              <button class="btn-primary text-sm" onclick="genVipKeysAdmin()">Generar llaves</button>
+            </div>
+            <textarea id="vipGenOut" readonly class="h-28 font-mono text-xs hidden" style="color:#fbbf24"></textarea>
+          </div>
+
           <div class="card overflow-hidden mb-6">
             <div class="px-5 py-3 border-b text-sm font-semibold" style="border-color:#1e1e2a">Usuarios</div>
             <div class="overflow-x-auto">
@@ -1133,9 +1144,15 @@ local Players = game:GetService(&quot;Players&quot;)
                 </div>
               </div>
               <div id="premiumBox" class="mt-4 p-4 rounded-xl" style="background:#14120a;border:1px solid #3d3418">
-                <div class="text-sm font-semibold" style="color:#fbbf24">✦ Premium</div>
-                <div class="text-xs mt-1 mb-3" style="color:#8b8b9e">Publica en el Hub sin 500 runs, badge dorado y más prioridad.</div>
-                <div class="text-xs" style="color:#5a5a6e">Contacta a <b style="color:#a78bfa">OWNER</b> para activar Premium en tu cuenta.</div>
+                <div class="text-sm font-semibold" style="color:#fbbf24">✦ VIP / Premium</div>
+                <div class="text-xs mt-1 mb-2" style="color:#8b8b9e">Scripts ilimitados, Hub sin 500 runs, badge dorado.</div>
+                <div id="vipStatusLine" class="text-xs mb-3" style="color:#5a5a6e">Estado: cargando…</div>
+                <label class="field">Canjear llave VIP</label>
+                <div class="flex gap-2 mt-1">
+                  <input id="vipCodeInput" placeholder="QYREX-VIP-XXXX-XXXX-XXXXXX" class="flex-1 font-mono text-xs"/>
+                  <button type="button" class="btn-primary text-sm whitespace-nowrap" onclick="redeemVipKey()">Canjear</button>
+                </div>
+                <p class="text-[11px] mt-2" style="color:#6d6d85">Cada llave da <b style="color:#fbbf24">10 días VIP</b>. Si ya tienes VIP, se suman los días.</p>
               </div>
               <button onclick="logout()" class="btn-ghost mt-4" style="color:#f87171;border-color:#3a1a1a">Cerrar sesión</button>
             </div>
@@ -1250,6 +1267,69 @@ function toggleAnim(on){
   }
 }
 
+
+async function refreshVipStatus(){
+  try {
+    const r = await fetch('/api/vip/status', { headers: headers() });
+    if (!r.ok) return;
+    const d = await r.json();
+    const el = document.getElementById('vipStatusLine');
+    if (!el) return;
+    if (d.premium) {
+      const until = d.premiumUntil ? new Date(d.premiumUntil).toLocaleString() : '∞';
+      el.innerHTML = 'Estado: <b style="color:#fbbf24">VIP activo</b> hasta ' + until;
+      if (currentUser) { currentUser.premium = true; currentUser.premiumUntil = d.premiumUntil; applyUserUi(currentUser); }
+    } else {
+      el.innerHTML = 'Estado: <span style="color:#8b8b9e">Sin VIP</span> — canjea una llave abajo';
+    }
+  } catch {}
+}
+
+async function redeemVipKey(){
+  const input = document.getElementById('vipCodeInput');
+  const code = (input && input.value || '').trim();
+  if (!code) { toast('Pega la llave VIP', 'err'); return; }
+  try {
+    const r = await fetch('/api/vip/redeem', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ code })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    toast(d.message || 'VIP activado');
+    if (input) input.value = '';
+    await refreshVipStatus();
+    try {
+      const me = await fetch('/api/me', { headers: headers() }).then(x => x.json());
+      if (me && me.username) { currentUser = me; applyUserUi(me); }
+    } catch {}
+  } catch (e) {
+    toast(e.message || 'No se pudo canjear', 'err');
+  }
+}
+
+
+
+async function genVipKeysAdmin(){
+  const amount = Number((document.getElementById('vipGenAmount')||{}).value || prompt('Cuantas llaves VIP?', '10') || 0);
+  if (!amount) return;
+  const days = Number((document.getElementById('vipGenDays')||{}).value || 10);
+  try {
+    const r = await fetch('/api/admin/vip-keys', {
+      method:'POST', headers: headers(),
+      body: JSON.stringify({ amount, days, note: 'admin-panel' })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    const text = (d.keys||[]).map(k => k.code).join(String.fromCharCode(10));
+    const out = document.getElementById('vipGenOut');
+    if (out) { out.classList.remove('hidden'); out.value = text; }
+    try { await navigator.clipboard.writeText(text); } catch(e) {}
+    toast((d.keys||[]).length + ' llaves VIP generadas');
+  } catch(e){ toast(e.message,'err'); }
+}
+
 function logout(){ token = ''; localStorage.removeItem('qrex_token'); location.reload(); }
 
 function setErr(msg){
@@ -1336,6 +1416,7 @@ function go(p){
   if (p === 'admin') loadAdmin();
   if (p === 'overview') { loadStats(); loadAnalytics(); }
   if (p === 'executions') loadAnalytics();
+  if (p === 'settings') { try { refreshVipStatus(); } catch(e) {} }
 }
 
 
