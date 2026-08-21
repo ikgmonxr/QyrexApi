@@ -887,7 +887,6 @@
                 <label class="field">Ofuscador</label>
                 <select id="sObfMode">
                   <option value="voltils">Voltils</option>
-                  <option value="failed">Failed</option>
                   <option value="none">Sin ofuscar</option>
                 </select>
                 <div class="text-xs mt-1" style="color:#5a5a6e">Elige cómo se protege el script antes de publicarlo.</div>
@@ -1911,7 +1910,7 @@ function renderScripts(list){
           '<div class="text-xs mt-0.5 truncate" style="color:#5a5a6e">'+esc(s.description||'Sin descripción')+'</div>'+
           '<div class="flex flex-wrap gap-2 mt-2">'+
             '<span class="chip">'+(s.executions||0)+' runs</span>'+
-            '<span class="chip">'+(s.obfMode==='none'||s.doObfuscate===false?'None':(s.obfMode==='failed'||s.obfMode==='local'?'Failed':(s.obfMode==='voltils'||s.obfMode==='qrex'?'Voltils':String(s.obfMode||'?'))))+'</span>'+
+            '<span class="chip">'+(s.obfMode==='none'||s.doObfuscate===false?'None':'Voltils')+'</span>'+
             (date ? '<span class="chip">'+esc(date)+'</span>' : '')+
             '<span class="chip" style="font-family:monospace;font-size:10px">'+esc((s.id||'').slice(0,10))+'…</span>'+
           '</div>'+
@@ -1961,7 +1960,7 @@ async function editScript(id){
     document.getElementById('sDesc').value = s.description || '';
     document.getElementById('sSource').value = s.source || '';
     const om = document.getElementById('sObfMode');
-    if (om) om.value = (s.obfMode==='qrex'?'voltils':s.obfMode==='local'?'failed':(s.obfMode||(s.doObfuscate===false?'none':'voltils')));
+    if (om) om.value = (s.obfMode==='none'||s.doObfuscate===false)?'none':'voltils';
     document.getElementById('createTitle').textContent = 'Edit Script';
     document.getElementById('createSubtitle').textContent = 'Modificando · ' + (s.name || id);
     document.getElementById('createBtnLabel').textContent = 'Save changes';
