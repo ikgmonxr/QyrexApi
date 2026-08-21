@@ -18,6 +18,10 @@ const VOLTILS_PRESET = process.env.VOLTILS_PRESET || 'normal';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/auto';
 
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1540116209348116491';
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || '';
+const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || 'https://qyrex.hopto.org/auth/discord/callback';
+
 const PORT = process.env.PORT || 10000;
 
 app.use(helmet({
@@ -140,6 +144,8 @@ mongoose.connection.on('error', (e) => { mongoReady = false; console.error('Mong
 const User = mongoose.models.QrexUser || mongoose.model('QrexUser', new mongoose.Schema({
   username: { type: String, unique: true, required: true, lowercase: true, trim: true },
   passwordHash: { type: String, required: true },
+  discordId: { type: String, default: null, index: true },
+  avatar: { type: String, default: '' },
   role: { type: String, default: 'user' }, // user | admin
   premium: { type: Boolean, default: false },
   premiumUntil: { type: Date, default: null },
@@ -630,7 +636,9 @@ app.post('/api/auth/login', needMongo, async (req, res) => {
         id: doc._id,
         username: doc.username,
         role: doc.role || 'user',
-        premium: isPremiumUser(doc)
+        premium: isPremiumUser(doc),
+        avatar: doc.avatar || '',
+        discordId: doc.discordId || null
       }
     });
   } catch (e) {
@@ -651,7 +659,9 @@ app.get('/api/me', auth, needMongo, async (req, res) => {
     id: user._id,
     username: user.username,
     role: user.role || 'user',
-    premium: isPremiumUser(user)
+    premium: isPremiumUser(user),
+    avatar: user.avatar || '',
+    discordId: user.discordId || null
   });
 });
 
@@ -2019,6 +2029,84 @@ app.get('/api/ai/status', auth, (req, res) => {
 
 app.get('/api/env-logger', (req, res) => {
   res.type('text/plain').send(ENV_GATE_LUA);
+});
+
+
+// ===== DISCORD OAUTH =====
+function discordAuthorizeUrl(state) {
+  const params = new URLSearchParams({
+    client_id: DISCORD_CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: DISCORD_REDIRECT_URI,
+    scope: 'identify',
+    prompt: 'consent'
+  });
+  if (state) params.set('state', state);
+  return 'https://discord.com/api/oauth2/authorize?' + params.toString();
+}
+
+app.get('/auth/discord', (req, res) => {
+  res.redirect(discordAuthorizeUrl(crypto.randomBytes(8).toString('hex')));
+});
+
+app.get('/auth/discord/callback', async (req, res) => {
+  const fail = (msg) => res.redirect('/?discord_error=' + encodeURIComponent(msg));
+  try {
+    const code = String(req.query.code || '');
+    if (!code) return fail('Discord no devolvio el code');
+    if (!DISCORD_CLIENT_SECRET) return fail('Falta DISCORD_CLIENT_SECRET en el servidor');
+    if (mongoose.connection.readyState !== 1) return fail('Base de datos no disponible');
+
+    const tokenRes = await fetch('https://discord.com/api/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: DISCORD_CLIENT_ID,
+        client_secret: DISCORD_CLIENT_SECRET,
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: DISCORD_REDIRECT_URI
+      })
+    });
+    const tokenData = await tokenRes.json().catch(() => ({}));
+    if (!tokenRes.ok || !tokenData.access_token) {
+      return fail('Discord token: ' + (tokenData.error_description || tokenData.error || tokenRes.status));
+    }
+
+    const meRes = await fetch('https://discord.com/api/users/@me', {
+      headers: { Authorization: 'Bearer ' + tokenData.access_token }
+    });
+    const me = await meRes.json().catch(() => ({}));
+    if (!meRes.ok || !me.id) return fail('No se pudo leer el perfil de Discord');
+
+    let doc = await User.findOne({ discordId: me.id });
+    if (!doc) {
+      let base = String(me.username || ('dc' + me.id)).toLowerCase().replace(/[^a-z0-9_]/g, '');
+      if (base.length < 3) base = 'dc' + me.id.slice(-6);
+      let username = base;
+      let i = 0;
+      while (await User.findOne({ username })) {
+        i += 1;
+        username = (base + i).slice(0, 24);
+      }
+      doc = await User.create({
+        username,
+        passwordHash: hashPassword(crypto.randomBytes(24).toString('hex')),
+        discordId: me.id,
+        avatar: me.avatar ? ('https://cdn.discordapp.com/avatars/' + me.id + '/' + me.avatar + '.png') : '',
+        role: 'user'
+      });
+    } else if (me.avatar) {
+      doc.avatar = 'https://cdn.discordapp.com/avatars/' + me.id + '/' + me.avatar + '.png';
+      await doc.save();
+    }
+
+    const jwtToken = signToken(doc);
+    return res.redirect('/?token=' + encodeURIComponent(jwtToken));
+  } catch (e) {
+    console.error('discord oauth', e);
+    return fail(e.message || 'Error inesperado');
+  }
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
