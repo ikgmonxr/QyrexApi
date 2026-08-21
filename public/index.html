@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>QrexApi &middot; Panel privado de scripts</title>
-<meta name="description" content="Panel QrexApi: obfuscacion de scripts Lua, key system con HWID lock, webhooks y metricas en vivo."/>
+<meta name="description" content="Panel QrexApi: obfuscacion Lua protegida por Voltils, key system HWID, webhooks y metricas en vivo."/>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -383,6 +383,48 @@
     .sidebar-overlay{display:none!important}
   }
 
+
+  .voltils-credit{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;
+    color:#c4b5fd;background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.28);
+    padding:5px 10px;border-radius:999px;text-decoration:none;transition:all .2s}
+  .voltils-credit:hover{background:rgba(124,58,237,.22);border-color:rgba(167,139,250,.5);color:#e9e5ff}
+  .voltils-credit svg{width:14px;height:14px;flex-shrink:0;opacity:.9}
+  .voltils-footer{text-align:center;padding:16px 12px 28px;font-size:11px;color:#5a5a6e;line-height:1.55}
+  .voltils-footer a{color:#a78bfa;text-decoration:none;font-weight:600}
+  .voltils-footer a:hover{text-decoration:underline}
+  .protected-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+
+  /* ===== Responsive polish PC + móvil ===== */
+  @media (min-width: 901px) {
+    .main-content { margin-left: 260px !important; }
+    .voltils-credit { font-size: 10px; }
+  }
+  @media (max-width: 900px) {
+    .voltils-credit { font-size: 10px; padding: 4px 8px; }
+    .sidebar .voltils-credit { max-width: 100%; }
+    #appView main > .p-8, #appView main .p-8 { padding: 12px !important; }
+    .card { border-radius: 12px; }
+    .btn-primary, .btn-ghost { min-height: 44px; }
+    input, textarea, select { font-size: 16px !important; /* evita zoom iOS */ }
+    .stat-val { font-size: 24px; }
+    h1.text-2xl { font-size: 1.25rem; line-height: 1.3; }
+    .flex.flex-wrap.gap-2 { gap: 8px; }
+    .editor-body { min-height: 200px !important; max-height: 50vh !important; }
+    table { font-size: 12px; }
+    .user-pill { margin-bottom: 12px; }
+    .voltils-footer { padding: 20px 12px 40px; font-size: 11px; }
+    #createOut { font-size: 12px !important; }
+  }
+  @media (max-width: 480px) {
+    .grid.grid-cols-2 { grid-template-columns: 1fr !important; }
+    .grid.grid-cols-3 { grid-template-columns: 1fr !important; }
+    .mobile-topbar .mt-brand b { font-size: 15px; }
+    .lg-shell { margin: 0 4px; }
+  }
+  @media (min-width: 1280px) {
+    #appView main .p-8 { padding: 28px 32px !important; max-width: 1400px; }
+  }
+
 </style>
 </head>
 <body>
@@ -471,6 +513,8 @@
         <button onclick="openLegal('support')">Soporte</button>
       </div>
       <p class="lg-legal" style="margin-top:14px;color:#3f3f52">&copy; 2026 QrexApi &middot; Todos los derechos reservados</p>
+      <p class="lg-legal" style="margin-top:10px">Protected by <a href="https://discord.gg/f4HRYHTCnz" target="_blank" rel="noopener" style="color:#c4b5fd;font-weight:600">Voltils</a>
+      · <a href="https://discord.gg/f4HRYHTCnz" target="_blank" rel="noopener">discord.gg/f4HRYHTCnz</a></p>
     </section>
   </div>
 </div>
@@ -494,7 +538,13 @@
       </button>
       <div class="flex items-center gap-3 px-5 py-5">
         <img src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="Qrex" class="w-9 h-9 rounded-xl object-cover"/>
-        <span class="font-bold text-lg tracking-tight">QrexApi</span>
+        <div class="min-w-0">
+          <div class="font-bold text-lg tracking-tight leading-tight">QrexApi</div>
+          <a class="voltils-credit mt-1" href="https://discord.gg/f4HRYHTCnz" target="_blank" rel="noopener" title="Ofuscador Voltils">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zm0 9l-10 5 10 5 10-5-10-5z"/></svg>
+            Protected by Voltils
+          </a>
+        </div>
       </div>
       <nav class="flex-1 overflow-y-auto main-scroll pb-4">
         <div class="nav-section">GENERAL</div>
@@ -808,7 +858,7 @@
               <div>
                 <label class="field">Protección del código</label>
                 <input type="hidden" id="sObfMode" value="qrex"/>
-                <div class="text-xs" style="color:#5a5a6e">Protección QyrexObf activada automáticamente.</div></div>
+                <div class="text-xs" style="color:#5a5a6e">Ofuscación <b style="color:#c4b5fd">Voltils</b> activada automáticamente · <a href="https://discord.gg/f4HRYHTCnz" target="_blank" rel="noopener" style="color:#a78bfa">Discord</a>.</div></div>
               <div class="text-xs" style="color:#5a5a6e">Gratis: máx 15 scripts · VIP: ilimitados</div>
 
               <div class="tab-bar">
@@ -829,6 +879,7 @@
                   <div class="flex items-center gap-2 text-xs">
                     <span style="color:#8b8b9e">&lt;/&gt; Studio · Lua</span>
                     <span class="badge badge-green">Protected</span>
+                    <a class="voltils-credit" href="https://discord.gg/f4HRYHTCnz" target="_blank" rel="noopener">Protected by Voltils</a>
                     <span class="badge" id="studioLang">Lua 5.1</span>
                   </div>
                   <div class="studio-toolbar">
@@ -1082,7 +1133,7 @@ local Players = game:GetService(&quot;Players&quot;)
         <section id="page-changelog" class="page hidden">
           <h1 class="text-2xl font-bold mb-6">Changelog</h1>
           <div class="space-y-4 max-w-2xl">
-            <div class="card p-5"><div class="text-sm font-semibold" style="color:#a78bfa">v2.0 — Feature drop</div><div class="text-xs mt-2" style="color:#8b8b9e">Key System, Hub, VIP, Admin, Webhooks, Leaderboard, Assets, Templates, Versions, Status, Themes, Playground, IP Blacklist, límite 15 scripts (ilimitado VIP).</div></div>
+            <div class="card p-5"><div class="text-sm font-semibold" style="color:#a78bfa">v2.0 — Feature drop</div><div class="text-xs mt-2" style="color:#8b8b9e">Key System, Hub, VIP, Admin, Webhooks, Leaderboard, Assets, Templates, Versions, Status, Themes, Playground, IP Blacklist, límite 15 scripts (ilimitado VIP). Ofuscacion: <b style="color:#c4b5fd">Voltils</b>.</div></div>
             <div class="card p-5"><div class="text-sm font-semibold">v1.0 — Launch</div><div class="text-xs mt-2" style="color:#8b8b9e">Auth usuario/contraseña, scripts ofuscados, analytics, access denied page.</div></div>
           </div>
         </section>
@@ -1636,7 +1687,7 @@ function renderScripts(list){
           '<div class="text-xs mt-0.5 truncate" style="color:#5a5a6e">'+esc(s.description||'Sin descripción')+'</div>'+
           '<div class="flex flex-wrap gap-2 mt-2">'+
             '<span class="chip">'+(s.executions||0)+' runs</span>'+
-            '<span class="chip">'+(s.obfMode==='local'?'XOR×5':(s.obfMode==='none'||s.doObfuscate===false)?'Plain+AT':'Qyrex')+'</span>'+
+            '<span class="chip">'+(s.obfMode==='local'?'XOR×5':(s.obfMode==='none'||s.doObfuscate===false)?'Plain+AT':'Voltils')+'</span>'+
             (date ? '<span class="chip">'+esc(date)+'</span>' : '')+
             '<span class="chip" style="font-family:monospace;font-size:10px">'+esc((s.id||'').slice(0,10))+'…</span>'+
           '</div>'+
@@ -1686,7 +1737,7 @@ async function editScript(id){
     document.getElementById('sDesc').value = s.description || '';
     document.getElementById('sSource').value = s.source || '';
     const om = document.getElementById('sObfMode');
-    if (om) om.value = s.obfMode || (s.doObfuscate === false ? 'none' : 'qrex');
+    if (om) om.value = s.obfMode || (s.doObfuscate === false ? 'none' : 'voltils');
     document.getElementById('createTitle').textContent = 'Edit Script';
     document.getElementById('createSubtitle').textContent = 'Modificando · ' + (s.name || id);
     document.getElementById('createBtnLabel').textContent = 'Save changes';
@@ -2134,6 +2185,7 @@ function updateLoaderSnippet(){
   const sel = document.getElementById('keyProvSelect');
   const provName = sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : 'MyProvider';
   const snip = `-- QrexApi Key Loader
+-- Protected by Voltils · https://discord.gg/f4HRYHTCnz
 local HttpService = game:GetService("HttpService")
 local cfg = {
   api = "${base}",
