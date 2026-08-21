@@ -250,6 +250,41 @@
   .qx-modal-box ul{margin:6px 0 0;padding-left:18px;display:grid;gap:4px}
   .qx-modal-close{margin-top:22px;width:100%}
 
+
+  /* ===== Dashboard pro (mismo vibe que login) ===== */
+  #appView{position:relative;background:#07070c;min-height:100vh}
+  #appView::before,#appView::after{content:"";position:fixed;border-radius:50%;filter:blur(100px);pointer-events:none;z-index:0}
+  #appView::before{width:520px;height:520px;top:-180px;left:-120px;background:rgba(124,58,237,.22);animation:drift 18s ease-in-out infinite alternate}
+  #appView::after{width:480px;height:480px;bottom:-200px;right:-140px;background:rgba(88,101,242,.16);animation:drift 22s ease-in-out infinite alternate-reverse}
+  .app-grid-bg{position:fixed;inset:0;pointer-events:none;opacity:.07;z-index:0;
+    background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);
+    background-size:52px 52px;mask-image:radial-gradient(circle at 40% 30%,#000 0%,transparent 75%)}
+  #appView > .flex{position:relative;z-index:1}
+  .sidebar{background:rgba(9,10,18,.88)!important;backdrop-filter:blur(18px) saturate(1.1);border-right:1px solid #1c1c28!important;
+    box-shadow:8px 0 40px -20px rgba(0,0,0,.6)}
+  .sidebar .nav-section{padding:18px 18px 6px;color:#5c5c72;letter-spacing:.14em}
+  .nav-item{border-radius:10px;margin:2px 10px;width:calc(100% - 20px)}
+  .nav-item.active{background:linear-gradient(135deg,rgba(124,58,237,.22),rgba(124,58,237,.08))!important;color:#c4b5fd!important;
+    box-shadow:inset 0 0 0 1px rgba(124,58,237,.35)}
+  .nav-item:hover{background:rgba(22,22,32,.9)}
+  .card{background:rgba(17,17,24,.82)!important;backdrop-filter:blur(12px);border:1px solid #1c1c28!important;
+    box-shadow:0 12px 40px -24px rgba(0,0,0,.7)}
+  .card:hover{border-color:#2a2a3d!important;box-shadow:0 16px 48px -20px rgba(124,58,237,.12)}
+  main, .main-area, #mainContent{position:relative;z-index:1}
+  .topbar,.page-header{border-color:#1c1c28!important}
+  .user-pill{background:rgba(17,17,24,.9)!important;border-color:#1c1c28!important}
+  input,textarea,select{background:rgba(12,12,18,.9)!important;border-color:#252533!important}
+  .btn-primary{box-shadow:0 8px 28px -8px rgba(124,58,237,.55)}
+  .stat-card{position:relative;overflow:hidden}
+  .stat-card::after{content:"";position:absolute;inset:auto -20% -40% auto;width:120px;height:120px;border-radius:50%;
+    background:rgba(124,58,237,.12);filter:blur(20px);pointer-events:none}
+  /* Settings pro */
+  #page-settings .card,#settings .card{border-radius:16px}
+  .settings-hero{background:linear-gradient(135deg,rgba(124,58,237,.14),rgba(88,101,242,.06));
+    border:1px solid rgba(124,58,237,.25);border-radius:14px;padding:16px 18px;margin-top:12px}
+  .settings-hero h4{color:#fbbf24;font-size:13px;font-weight:700;margin:0 0 4px}
+  .settings-hero p{color:#8b8b9e;font-size:12px;margin:0;line-height:1.5}
+
 </style>
 </head>
 <body>
@@ -350,81 +385,91 @@
         <img src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="Qrex" class="w-9 h-9 rounded-xl object-cover"/>
         <span class="font-bold text-lg tracking-tight">QrexApi</span>
       </div>
-      <nav class="flex-1 overflow-y-auto pb-4">
-        <div class="nav-section">General</div>
+      <nav class="flex-1 overflow-y-auto main-scroll pb-4">
+        <div class="nav-section">GENERAL</div>
         <button class="nav-item active" data-page="overview" onclick="go('overview')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1h-2z"/></svg>
           Overview
         </button>
-        <div class="nav-section">Scripts</div>
-        <button class="nav-item" data-page="scripts" onclick="go('scripts')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-          Lua Scripts
-        </button>
-        <button class="nav-item" data-page="hub" onclick="go('hub')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-          Script Hub
-        </button>
-        <button class="nav-item" data-page="keys" onclick="go('keys')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
-          Key System
-        </button>
-        <button class="nav-item" data-page="webhooks" onclick="go('webhooks')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-          Webhooks
-        </button>
-        <button class="nav-item" data-page="leaderboard" onclick="go('leaderboard')">
+        <button class="nav-item" data-page="executions" onclick="go('executions')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-          Leaderboard
-        </button>
-        <button class="nav-item" data-page="assets" onclick="go('assets')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
-          My Assets
-        </button>
-        <button class="nav-item" data-page="templates" onclick="go('templates')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"/></svg>
-          Templates
+          Analytics
         </button>
         <button class="nav-item" data-page="status" onclick="go('status')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           System Status
         </button>
-        <button class="nav-item" data-page="playground" onclick="go('playground')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-          API Playground
-        </button>
-        <button class="nav-item" data-page="changelog" onclick="go('changelog')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/></svg>
-          Changelog
+
+        <div class="nav-section">SCRIPTS</div>
+        <button class="nav-item" data-page="scripts" onclick="go('scripts')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          Lua Scripts
         </button>
         <button class="nav-item" data-page="create" onclick="if(!editingId)resetCreateForm();go('create')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
           Create Script
         </button>
         <button class="nav-item" data-page="studio" onclick="go('studio')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
           Studio
         </button>
-        <button class="nav-item" data-page="executions" onclick="go('executions')">
-          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-          Analytics
+        <button class="nav-item" data-page="hub" onclick="go('hub')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+          Script Hub
         </button>
-        <div class="nav-section">Developer</div>
-        <button class="nav-item" data-page="apiinfo" onclick="go('apiinfo')">
+        <button class="nav-item" data-page="templates" onclick="go('templates')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"/></svg>
+          Templates
+        </button>
+
+        <div class="nav-section">KEY SYSTEM</div>
+        <button class="nav-item" data-page="keys" onclick="go('keys')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+          Keys & Providers
+        </button>
+        <button class="nav-item" data-page="webhooks" onclick="go('webhooks')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Webhooks
+        </button>
+
+        <div class="nav-section">CLOUD</div>
+        <button class="nav-item" data-page="assets" onclick="go('assets')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+          My Assets
+        </button>
+
+        <div class="nav-section">COMMUNITY</div>
+        <button class="nav-item" data-page="leaderboard" onclick="go('leaderboard')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          Leaderboard
+        </button>
+        <button class="nav-item" data-page="changelog" onclick="go('changelog')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/></svg>
+          Changelog
+        </button>
+
+        <div class="nav-section">DEVELOPER</div>
+        <button class="nav-item" data-page="apiinfo" onclick="go('apiinfo')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           API Info
         </button>
-        <div class="nav-section admin-only" style="display:none">Admin</div>
+        <button class="nav-item" data-page="playground" onclick="go('playground')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          API Playground
+        </button>
+
+        <div class="nav-section admin-only" style="display:none">ADMIN</div>
         <button class="nav-item admin-only" style="display:none" data-page="admin" onclick="go('admin')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
           Admin Panel
         </button>
-        <div class="nav-section">Account</div>
+
+        <div class="nav-section">ACCOUNT</div>
         <button class="nav-item" data-page="settings" onclick="go('settings')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
           Settings
         </button>
-      </nav>
+</nav>
       <div class="user-pill">
         <div class="avatar" id="userAvatar">?</div>
         <div class="flex-1 min-w-0">
@@ -452,7 +497,7 @@
           <h1 class="text-2xl font-bold mb-6">Overview</h1>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl mb-8">
             <div class="card p-5">
-              <div class="text-xs font-medium mb-2" style="color:#6b6b80">Scripts</div>
+              <div class="text-xs font-medium mb-2" style="color:#6b6b80">SCRIPTS</div>
               <div class="stat-val" id="stScripts">0</div>
             </div>
             <div class="card p-5">
@@ -766,7 +811,7 @@ local Players = game:GetService(&quot;Players&quot;)
           <p class="text-xs mb-6" style="color:#5a5a6e">Solo visible para OWNER / admin</p>
           <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="adminStats">
             <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Users</div><div class="text-2xl font-bold" id="aUsers">—</div></div>
-            <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Scripts</div><div class="text-2xl font-bold" id="aScripts">—</div></div>
+            <div class="card p-4"><div class="text-xs" style="color:#6b6b80">SCRIPTS</div><div class="text-2xl font-bold" id="aScripts">—</div></div>
             <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Hub</div><div class="text-2xl font-bold" id="aHub">—</div></div>
             <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Premium</div><div class="text-2xl font-bold" style="color:#fbbf24" id="aPrem">—</div></div>
           </div>
