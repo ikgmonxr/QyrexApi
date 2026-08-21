@@ -285,6 +285,104 @@
   .settings-hero h4{color:#fbbf24;font-size:13px;font-weight:700;margin:0 0 4px}
   .settings-hero p{color:#8b8b9e;font-size:12px;margin:0;line-height:1.5}
 
+
+  /* ===== MOBILE / TABLET RESPONSIVE ===== */
+  .mobile-topbar{
+    display:none;position:sticky;top:0;z-index:40;
+    align-items:center;justify-content:space-between;gap:12px;
+    padding:12px 14px;background:rgba(9,10,18,.92);
+    backdrop-filter:blur(16px);border-bottom:1px solid #1c1c28;
+  }
+  .mobile-topbar .mt-brand{display:flex;align-items:center;gap:10px;min-width:0}
+  .mobile-topbar .mt-brand img{width:32px;height:32px;border-radius:10px;object-fit:cover;flex-shrink:0}
+  .mobile-topbar .mt-brand b{font-size:16px;letter-spacing:-.02em}
+  .hamburger{
+    width:42px;height:42px;border-radius:12px;border:1px solid #2a2a3a;
+    background:rgba(17,17,24,.9);color:#e4e4ed;display:inline-flex;
+    align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;
+  }
+  .hamburger:active{transform:scale(.96)}
+  .sidebar-overlay{
+    display:none;position:fixed;inset:0;z-index:30;
+    background:rgba(0,0,0,.55);backdrop-filter:blur(2px);
+  }
+  .sidebar-overlay.show{display:block}
+  .sidebar-close-btn{
+    display:none;position:absolute;top:12px;right:12px;z-index:5;
+    width:36px;height:36px;border-radius:10px;border:1px solid #2a2a3a;
+    background:#12121a;color:#c4b5fd;cursor:pointer;align-items:center;justify-content:center;
+  }
+
+  @media (max-width: 900px){
+    .mobile-topbar{display:flex}
+    .sidebar-close-btn{display:inline-flex}
+    .sidebar{
+      position:fixed!important;left:0;top:0;bottom:0;height:100%!important;
+      width:min(300px,88vw)!important;max-width:300px;
+      transform:translateX(-105%);transition:transform .28s cubic-bezier(.22,1,.36,1);
+      z-index:50!important;box-shadow:0 0 0 transparent;
+    }
+    body.sidebar-open .sidebar{
+      transform:translateX(0);
+      box-shadow:20px 0 60px -20px rgba(0,0,0,.7);
+    }
+    main.flex-1, main.ml-\[260px\], #appView main{
+      margin-left:0!important;
+      width:100%!important;
+    }
+    #appView main > .flex.items-center.px-8,
+    #appView main > div.flex.items-center{
+      padding-left:14px!important;padding-right:14px!important;
+      padding-top:12px!important;padding-bottom:12px!important;
+    }
+    #appView main > .p-8,
+    #appView main .p-8{
+      padding:14px!important;
+    }
+    .nav-item{padding:12px 14px;font-size:14px;min-height:44px}
+    .btn-primary,.btn-ghost{min-height:44px;padding:12px 16px;font-size:14px}
+    .script-actions{width:100%}
+    .script-actions .btn-ghost,.script-actions button{flex:1;min-width:0}
+    .icon-btn{width:40px;height:40px}
+    .grid.sm\:grid-cols-3,.grid.grid-cols-2,.grid.grid-cols-3,.grid.lg\:grid-cols-2,.grid.lg\:grid-cols-4{
+      grid-template-columns:1fr!important;
+    }
+    .grid.grid-cols-1.sm\:grid-cols-3{grid-template-columns:1fr!important}
+    .stat-val{font-size:26px}
+    h1.text-2xl{font-size:1.35rem}
+    .editor-body{min-height:220px;max-height:360px}
+    .line-nums{min-width:36px;width:36px;font-size:11px;padding:10px 6px}
+    #sSource{font-size:12px;padding:10px}
+    .search-box{max-width:100%;width:100%}
+    .toast-wrap{left:12px;right:12px;top:12px;align-items:stretch}
+    .toast{min-width:0;width:100%}
+    .qx-modal{padding:12px;align-items:flex-end}
+    .qx-modal-box{width:100%;max-height:85vh;overflow:auto;border-radius:16px 16px 12px 12px}
+    table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+    thead,tbody,tr{width:100%}
+    th,td{white-space:nowrap;padding:10px 12px;font-size:12px}
+    .user-pill{margin:8px;padding:10px}
+    .tab-bar button{padding:12px 8px;font-size:12px}
+    .studio-toolbar{gap:8px}
+    .studio-toolbar .btn-ghost{min-height:36px}
+    /* avoid fixed 260px leftover */
+    .ml-\[260px\]{margin-left:0!important}
+  }
+
+  @media (max-width: 480px){
+    .mobile-topbar{padding:10px 12px}
+    #appView main > .p-8{padding:12px!important}
+    .card{border-radius:12px}
+    .btn-primary{width:100%}
+    .lg-panel{padding:28px 18px!important}
+    #loginView{padding-top:72px!important;padding-left:12px!important;padding-right:12px!important}
+  }
+
+  @media (min-width: 901px){
+    body.sidebar-open .sidebar{transform:none}
+    .sidebar-overlay{display:none!important}
+  }
+
 </style>
 </head>
 <body>
@@ -379,8 +477,21 @@
 
 <!-- APP -->
 <div id="appView" style="display:none;min-height:100vh">
+  <div class="mobile-topbar">
+    <div class="mt-brand">
+      <img src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="Qrex"/>
+      <b>QrexApi</b>
+    </div>
+    <button type="button" class="hamburger" id="menuBtn" aria-label="Menu" onclick="toggleSidebar()">
+      <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+  </div>
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
   <div class="flex" style="min-height:100vh">
-    <aside class="sidebar flex flex-col fixed h-full z-20">
+    <aside class="sidebar flex flex-col fixed h-full z-20" id="appSidebar">
+      <button type="button" class="sidebar-close-btn" onclick="closeSidebar()" aria-label="Cerrar">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
       <div class="flex items-center gap-3 px-5 py-5">
         <img src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="Qrex" class="w-9 h-9 rounded-xl object-cover"/>
         <span class="font-bold text-lg tracking-tight">QrexApi</span>
@@ -486,7 +597,7 @@
       </div>
     </aside>
 
-    <main class="flex-1 ml-[260px] min-h-screen">
+    <main class="flex-1 min-h-screen main-content" style="margin-left:260px">
       <div class="flex items-center px-8 py-4 border-b" style="border-color:#1a1a24">
         <div class="text-sm" style="color:#5a5a6e">Dashboard <span style="color:#3a3a4a">›</span> <span id="breadcrumb" style="color:#a0a0b0">Overview</span></div>
       </div>
@@ -596,6 +707,19 @@
                 <div><label class="field">Key validity (hours)</label><input id="provHours" type="number" value="24" min="1"/></div>
                 <div><label class="field">HWID limit</label><input id="provHwid" type="number" value="1" min="1" max="10"/></div>
               </div>
+              <div><label class="field">Link system</label>
+                <select id="provLinkType">
+                  <option value="linkvertise">Linkvertise</option>
+                  <option value="lootlabs">Lootlabs</option>
+                  <option value="workink">Work.ink</option>
+                  <option value="custom">Custom URL</option>
+                  <option value="none">Solo claim (sin ads)</option>
+                </select>
+              </div>
+              <div><label class="field">Ad link (Linkvertise / Lootlabs / Work.ink)</label>
+                <input id="provAdLink" placeholder="https://linkvertise.com/... o https://work.ink/..."/>
+                <p class="text-[11px] mt-1" style="color:#5a5a6e">Destino final del anuncio debe ser tu claim URL (se muestra abajo al crear).</p>
+              </div>
               <button class="btn-primary" onclick="createProvider()">Create Provider</button>
             </div>
           </div>
@@ -622,7 +746,7 @@
             </div>
             <div class="card p-5">
               <div class="text-sm font-semibold mb-2">Loader Lua (copia en tu script)</div>
-              <p class="text-xs mb-3" style="color:#5a5a6e">Cambia PROVIDER_NAME. Verifica key + HWID contra QrexApi.</p>
+              <p class="text-xs mb-3" style="color:#5a5a6e">Scripts con Key Mode usan GUI automatica. Claim URL: <code id="claimUrlHint" style="color:#a78bfa">/getkey/PROVIDER_ID</code></p>
               <pre id="loaderSnippet" class="text-[10px] overflow-x-auto whitespace-pre-wrap break-all p-3 rounded-lg font-mono" style="background:#0c0c12;color:#a0a0b0;max-height:220px"></pre>
               <button class="btn-ghost text-xs mt-2" onclick="copyLs(document.getElementById('loaderSnippet').textContent)">Copiar loader</button>
             </div>
@@ -1175,7 +1299,25 @@ window.onload = function(){
 
 const pageNames = { overview:'Overview', scripts:'Lua Scripts', hub:'Script Hub', keys:'Key System', webhooks:'Webhooks', leaderboard:'Leaderboard', assets:'My Assets', templates:'Templates', status:'System Status', playground:'API Playground', changelog:'Changelog', create:'Create Script', studio:'Studio', executions:'Analytics', apiinfo:'API Info', settings:'Settings', admin:'Admin Panel' };
 
+
+function isMobileNav(){ return window.matchMedia('(max-width: 900px)').matches; }
+function openSidebar(){
+  document.body.classList.add('sidebar-open');
+  const ov = document.getElementById('sidebarOverlay');
+  if (ov) ov.classList.add('show');
+}
+function closeSidebar(){
+  document.body.classList.remove('sidebar-open');
+  const ov = document.getElementById('sidebarOverlay');
+  if (ov) ov.classList.remove('show');
+}
+function toggleSidebar(){
+  if (document.body.classList.contains('sidebar-open')) closeSidebar();
+  else openSidebar();
+}
+
 function go(p){
+  if (isMobileNav()) closeSidebar();
   document.querySelectorAll('.page').forEach(x => x.classList.add('hidden'));
   document.getElementById('page-' + p).classList.remove('hidden');
   document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
@@ -1195,6 +1337,18 @@ function go(p){
   if (p === 'overview') { loadStats(); loadAnalytics(); }
   if (p === 'executions') loadAnalytics();
 }
+
+
+window.addEventListener('resize', function(){
+  if (!isMobileNav()) closeSidebar();
+  // keep main margin desktop
+  var main = document.querySelector('#appView main.main-content');
+  if (main) main.style.marginLeft = isMobileNav() ? '0' : '260px';
+});
+document.addEventListener('DOMContentLoaded', function(){
+  var main = document.querySelector('#appView main.main-content');
+  if (main) main.style.marginLeft = isMobileNav() ? '0' : '260px';
+});
 
 function esc(t){ const d=document.createElement('div'); d.textContent=t||''; return d.innerHTML; }
 
@@ -1776,14 +1930,25 @@ async function loadProviders(){
       sel.innerHTML = '<option value="">—</option>';
       return;
     }
-    el.innerHTML = list.map(p =>
-      '<div class="flex justify-between items-center py-2 border-b" style="border-color:#1a1a24">'+
-        '<div><span class="font-medium" style="color:#c4b5fd">'+esc(p.name)+'</span>'+
-        '<div class="text-xs" style="color:#5a5a6e">'+p.keyValidityHours+'h · HWID '+p.hwidLimit+(p.enabled===false?' · OFF':'')+'</div></div>'+
-        '<button class="icon-btn danger" title="Eliminar" onclick="delProvider(\''+p._id+'\')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>'+
-      '</div>'
-    ).join('');
+    el.innerHTML = list.map(p => {
+      const claim = location.origin + '/getkey/' + p._id;
+      const lt = p.linkType || 'custom';
+      return '<div class="py-3 border-b" style="border-color:#1a1a24">'+
+        '<div class="flex justify-between items-start gap-2">'+
+          '<div class="min-w-0"><span class="font-medium" style="color:#c4b5fd">'+esc(p.name)+'</span>'+
+          '<div class="text-xs mt-0.5" style="color:#5a5a6e">'+p.keyValidityHours+'h · HWID '+p.hwidLimit+' · '+esc(lt)+(p.enabled===false?' · OFF':'')+'</div>'+
+          '<div class="text-[10px] mt-1 break-all" style="color:#6d6d85">Claim: <span style="color:#a78bfa">'+claim+'</span></div>'+
+          (p.adLink ? '<div class="text-[10px] mt-0.5 break-all" style="color:#5a5a6e">Ad: '+esc(p.adLink)+'</div>' : '')+
+          '</div>'+
+          '<div class="flex gap-1 flex-shrink-0">'+
+          '<button class="icon-btn" title="Copiar claim" onclick="navigator.clipboard.writeText(\''+claim+'\');toast(\'Claim copiado\')">⧉</button>'+
+          '<button class="icon-btn danger" title="Eliminar" onclick="delProvider(\''+p._id+'\')"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>'+
+          '</div></div></div>';
+    }).join('');
+    
     sel.innerHTML = list.map(p => '<option value="'+p._id+'">'+esc(p.name)+'</option>').join('');
+    const hint = document.getElementById('claimUrlHint');
+    if (hint && list[0]) hint.textContent = location.origin + '/getkey/' + list[0]._id;
   } catch(e) { console.error(e); }
 }
 
@@ -1791,10 +1956,12 @@ async function createProvider(){
   const name = document.getElementById('provName').value.trim();
   const keyValidityHours = document.getElementById('provHours').value;
   const hwidLimit = document.getElementById('provHwid').value;
+  const linkType = (document.getElementById('provLinkType')||{}).value || 'custom';
+  const adLink = (document.getElementById('provAdLink')||{}).value || '';
   try {
     const r = await fetch('/api/providers', {
       method:'POST', headers: headers(),
-      body: JSON.stringify({ name, keyValidityHours, hwidLimit })
+      body: JSON.stringify({ name, keyValidityHours, hwidLimit, linkType, adLink })
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Error');
