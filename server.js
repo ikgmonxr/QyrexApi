@@ -76,19 +76,95 @@ app.use('/api/', apiLimiter);
 app.use('/api/auth/', authLimiter);
 
 // Contadores en memoria para auto-ban
-const abuseHits = new Map(); // ip -> { n, t }
-const AUTO_BAN_THRESHOLD = 80; // hits raw en 2 min
+const abuseHits = new Map(); // ip -> { n, t, uas:Set }
+const scriptTokens = new Map(); // tokenId -> { scriptId, ip, exp, used }
+const AUTO_BAN_THRESHOLD = 45;
 const AUTO_BAN_WINDOW = 2 * 60 * 1000;
+const TOKEN_TTL_MS = 55 * 1000; // token capa2 ~55s
+const SCRAPER_UA_RE = /curl|wget|python|requests|axios|node-fetch|got\/|httpclient|libwww|scrapy|postman|insomnia|go-http|java\/|okhttp|httpie|discord|bot|crawler|spider/i;
 
-function trackAbuse(ip) {
+function trackAbuse(ip, ua) {
   const now = Date.now();
   let e = abuseHits.get(ip);
-  if (!e || now - e.t > AUTO_BAN_WINDOW) e = { n: 0, t: now };
+  if (!e || now - e.t > AUTO_BAN_WINDOW) e = { n: 0, t: now, uas: new Set() };
   e.n += 1;
+  if (ua) e.uas.add(String(ua).slice(0, 80).toLowerCase());
   e.t = e.t || now;
   abuseHits.set(ip, e);
+  // muchas UAs distintas = bot tipo .get
+  if (e.uas.size >= 4 && e.n >= 6) e.n = Math.max(e.n, AUTO_BAN_THRESHOLD);
   return e.n;
 }
+
+async function banIp(ip, reason) {
+  try {
+    if (mongoose.connection.readyState === 1 && mongoose.models.QrexBlacklistIP) {
+      await mongoose.models.QrexBlacklistIP.findOneAndUpdate(
+        { ip },
+        { ip, reason: String(reason || 'abuse').slice(0, 200), createdBy: 'system' },
+        { upsert: true }
+      );
+    }
+  } catch {}
+}
+
+function issueScriptToken(scriptId, ip) {
+  const nonce = crypto.randomBytes(10).toString('hex');
+  const exp = Date.now() + TOKEN_TTL_MS;
+  const payload = scriptId + '.' + exp + '.' + nonce + '.' + String(ip || '');
+  const sig = crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('hex').slice(0, 28);
+  const token = exp.toString(36) + '.' + nonce + '.' + sig;
+  scriptTokens.set(nonce, { scriptId, ip: String(ip || ''), exp, used: false });
+  return token;
+}
+
+function consumeScriptToken(scriptId, token, ip) {
+  if (!token || typeof token !== 'string') return false;
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  const exp = parseInt(parts[0], 36);
+  const nonce = parts[1];
+  const sig = parts[2];
+  if (!exp || !nonce || !sig) return false;
+  if (Date.now() > exp + 2000) return false;
+  const payload = scriptId + '.' + exp + '.' + nonce + '.' + String(ip || '');
+  // Accept token issued for this IP or empty binding fallback: try exact IP first
+  const expect = crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('hex').slice(0, 28);
+  // Also try without strict IP if mobile NAT changed (secondary check against stored map)
+  const rec = scriptTokens.get(nonce);
+  if (!rec) return false;
+  if (rec.used) return false;
+  if (rec.scriptId !== scriptId) return false;
+  if (Date.now() > rec.exp + 2000) return false;
+  // IP soft-match: same IP or token IP empty
+  if (rec.ip && ip && rec.ip !== String(ip) && rec.ip.split('.')[0] !== String(ip).split('.')[0]) {
+    // allow if HMAC matches alternate (issued with this ip) - otherwise reject
+    if (sig !== expect) return false;
+  }
+  const payloadIssued = scriptId + '.' + exp + '.' + nonce + '.' + rec.ip;
+  const expectIssued = crypto.createHmac('sha256', JWT_SECRET).update(payloadIssued).digest('hex').slice(0, 28);
+  if (sig !== expectIssued && sig !== expect) return false;
+  rec.used = true;
+  scriptTokens.set(nonce, rec);
+  return true;
+}
+
+function isScraperUa(ua) {
+  const u = String(ua || '');
+  if (!u.trim()) return true; // UA vacío típico de bots
+  return SCRAPER_UA_RE.test(u);
+}
+
+function decoyLua() {
+  const n = crypto.randomBytes(4).toString('hex');
+  return [
+    '-- access denied',
+    'local _' + n + ' = true',
+    'error("protected")',
+    'return nil'
+  ].join('\n');
+}
+
 
 // Limpieza periódica
 setInterval(() => {
@@ -96,7 +172,10 @@ setInterval(() => {
   for (const [ip, e] of abuseHits) {
     if (now - e.t > AUTO_BAN_WINDOW * 2) abuseHits.delete(ip);
   }
-}, 60000).unref?.();
+  for (const [k, v] of scriptTokens) {
+    if (!v || now > (v.exp || 0) + 60000 || v.used) scriptTokens.delete(k);
+  }
+}, 30000).unref?.();
 
 app.use(async (req, res, next) => {
   try {
@@ -527,27 +606,20 @@ function wrapWithEnvLogger(source) {
 async function resolveObfuscated(source, mode) {
   const src = String(source || '');
   let m = String(mode || 'voltils').toLowerCase();
-  // aliases
-  if (m === 'qrex') m = 'voltils';
-  if (m === 'local') m = 'failed';
-  if (!['none', 'voltils', 'failed'].includes(m)) m = 'voltils';
+  if (m === 'qrex' || m === 'local' || m === 'failed') m = 'voltils';
+  if (!['none', 'voltils'].includes(m)) m = 'voltils';
 
   if (m === 'none') {
     return { code: src, doObfuscate: false, obfMode: 'none' };
   }
 
   try {
-    let code;
-    if (m === 'failed') {
-      code = await obfuscateWithFailed(src);
-    } else {
-      code = await obfuscateWithVoltils(src);
-    }
+    let code = await obfuscateWithVoltils(src);
     code = String(code || '');
-    return { code, doObfuscate: true, obfMode: m };
+    return { code, doObfuscate: true, obfMode: 'voltils' };
   } catch (e) {
-    console.error('Obfuscator fail (' + m + '):', e.message);
-    throw new Error('Ofuscación falló (' + m + '): ' + (e.message || 'error'));
+    console.error('Obfuscator fail:', e.message);
+    throw new Error('Ofuscación falló: ' + (e.message || 'error'));
   }
 }
 
@@ -759,9 +831,8 @@ app.post('/api/scripts', auth, needMongo, async (req, res) => {
       const wantObf = req.body?.doObfuscate !== false && req.body?.doObfuscate !== 'false';
       obfMode = wantObf ? 'voltils' : 'none';
     }
-    if (obfMode === 'qrex') obfMode = 'voltils';
-    if (obfMode === 'local') obfMode = 'failed';
-    if (!['none', 'voltils', 'failed'].includes(obfMode)) obfMode = 'voltils';
+    if (obfMode === 'qrex' || obfMode === 'local' || obfMode === 'failed') obfMode = 'voltils';
+    if (!['none', 'voltils'].includes(obfMode)) obfMode = 'voltils';
     const resolved = await resolveObfuscated(source, obfMode);
     const doc = await Script.create({
       ownerId: req.user.sub,
@@ -828,13 +899,14 @@ app.put('/api/scripts/:id', auth, needMongo, async (req, res) => {
       let om = String(req.body.obfMode).toLowerCase();
       if (om === 'qrex') om = 'voltils';
       if (om === 'local') om = 'failed';
-      if (['none','voltils','failed'].includes(om)) {
+      if (om === 'failed' || om === 'local' || om === 'qrex') om = 'voltils';
+      if (['none','voltils'].includes(om)) {
         s.obfMode = om;
         s.doObfuscate = om !== 'none';
       }
     } else if (req.body?.doObfuscate !== undefined) {
       s.doObfuscate = req.body.doObfuscate !== false && req.body.doObfuscate !== 'false';
-      s.obfMode = s.doObfuscate ? (s.obfMode === 'failed' ? 'failed' : 'voltils') : 'none';
+      s.obfMode = s.doObfuscate ? 'voltils' : 'none';
     }
     if (source) {
       s.source = source;
@@ -861,29 +933,34 @@ app.delete('/api/scripts/:id', auth, needMongo, async (req, res) => {
 });
 
 
-// ========== DOUBLE LINK LOADER ==========
-// Capa 1 (público): solo stub que hace HttpGet a /cache/...
-// Capa 2 (cache): script real ofuscado (+ key gate si aplica)
+// ========== DOUBLE LINK + ANTI-SCRAPE ==========
+// Capa 1: stub con token de un solo uso (~55s)
+// Capa 2: solo con token válido; scrapers/curl/python → decoy o ban
+
 function buildDoubleLinkStub(cacheUrl) {
   const u = String(cacheUrl).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const junk = [];
-  for (let i = 0; i < 8; i++) {
-    junk.push('local _' + crypto.randomBytes(2).toString('hex') + '="' + crypto.randomBytes(4).toString('hex') + '"');
+  for (let i = 0; i < 12; i++) {
+    junk.push('local _' + crypto.randomBytes(2).toString('hex') + '="' + crypto.randomBytes(5).toString('hex') + '"');
   }
+  // Loader mínimo que solo funciona en entorno Roblox (game:HttpGet)
   return [
-    '-- QrexApi Protected Loader',
-    '-- QrexApi Protected Loader',
+    '-- QrexApi loader',
     ...junk,
-    'local function _g()',
+    'local function __qrex_boot()',
     '  local u="' + u + '"',
-    '  local a=game.HttpGet',
-    '  local b=game["Http".."Get"]',
-    '  local src=(type(a)=="function" and a(game,u)) or (type(b)=="function" and b(game,u)) or game:HttpGet(u)',
-    '  local fn,err=loadstring(src)',
-    '  if type(fn)~="function" then error(err or "loader fail") end',
+    '  local g=game',
+    '  if type(g)~="userdata" and type(g)~="table" then error("env") end',
+    '  local src',
+    '  local ok,err=pcall(function()',
+    '    src=g:HttpGet(u)',
+    '  end)',
+    '  if not ok or type(src)~="string" or #src<8 then error(err or "fetch") end',
+    '  local fn,e2=loadstring(src)',
+    '  if type(fn)~="function" then error(e2 or "compile") end',
     '  return fn()',
     'end',
-    'return _g()'
+    'return __qrex_boot()'
   ].join('\n');
 }
 
@@ -896,30 +973,29 @@ function publicBase(req) {
 function isBrowserReq(req) {
   const ua = (req.headers['user-agent'] || '').toLowerCase();
   const accept = (req.headers['accept'] || '').toLowerCase();
-  return accept.includes('text/html') &&
-    /mozilla|chrome|firefox|safari|edg/i.test(ua) &&
-    !/roblox|executor|synapse|fluxus|solara|wave|delta|electron/i.test(ua);
+  if (accept.includes('text/html') && /mozilla|chrome|firefox|safari|edg/i.test(ua) &&
+      !/roblox|executor|synapse|fluxus|solara|wave|delta/i.test(ua)) return true;
+  // Accept explícito de navegador sin UA de executor
+  if (accept.includes('text/html') && accept.includes('application/xhtml')) return true;
+  return false;
 }
 
 const DENY_HTML = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Access Denied — QrexApi</title>
+<title>Access Denied</title>
 <style>
 body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a0f;font-family:system-ui;color:#e4e4ed}
-.card{background:#111118;border:1px solid #1e1e2a;border-radius:20px;padding:40px;max-width:520px}
+.card{background:#111118;border:1px solid #1e1e2a;border-radius:20px;padding:40px;max-width:480px}
 .badge{color:#f87171;font-size:12px;font-weight:700;margin-bottom:12px}
-a{color:#a78bfa;text-decoration:none}a:hover{text-decoration:underline}
-.cred{margin-top:18px;font-size:12px;color:#6b6b80;line-height:1.5}
 </style></head><body><div class="card"><div class="badge">ACCESS DENIED</div>
-<h1>Protected by QrexApi</h1>
-<p>This lua script cannot be viewed in a browser.</p>
-
+<h1>Protected script</h1>
+<p>This resource cannot be viewed in a browser.</p>
 </div></body></html>`;
 
 async function serveRealScript(req, res, scriptId) {
   const ip = clientIp(req);
   if (!mongoReady && mongoose.connection.readyState !== 1) {
-    return res.status(503).type('text/plain').send('-- db offline');
+    return res.status(503).type('text/plain').send('-- offline');
   }
   const sk = 'cache:' + ip + ':' + scriptId;
   const now = Date.now();
@@ -928,7 +1004,7 @@ async function serveRealScript(req, res, scriptId) {
   if (!se || now - se.t > 60000) se = { n: 0, t: now };
   se.n++;
   global.__rawScriptHits.set(sk, se);
-  if (se.n > 60) return res.status(429).type('text/plain').send('-- slow down');
+  if (se.n > 30) return res.status(429).type('text/plain').send('-- slow down');
 
   const s = await Script.findOne({ id: scriptId });
   if (!s) return res.status(404).type('text/plain').send('-- not found');
@@ -944,10 +1020,12 @@ async function serveRealScript(req, res, scriptId) {
   });
   fireWebhooks(s.ownerId, 'script_exec', { scriptId: s.id, name: s.name, ip: String(ip).split(',')[0] });
 
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Robots-Tag', 'noindex');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   res.setHeader('X-Qrex-Layer', 'cache');
+  res.setHeader('Referrer-Policy', 'no-referrer');
 
   let payload = s.obfuscated || '';
   if (s.keyMode === 'key' && s.providerId) {
@@ -969,21 +1047,12 @@ async function serveRealScript(req, res, scriptId) {
   res.type('text/plain').send(payload);
 }
 
-
 app.get(['/api/raw/:id', '/api/v1/luascripts/public/:id/download', '/api/v1/luascripts/public/:id'], rawBurstLimiter, rawLimiter, async (req, res) => {
-  // CAPA 1: solo loader doble (no entrega el script real)
   const ip = clientIp(req);
-  const hits = trackAbuse(ip);
+  const ua = req.headers['user-agent'] || '';
+  const hits = trackAbuse(ip, ua);
   if (hits >= AUTO_BAN_THRESHOLD) {
-    try {
-      if (mongoose.connection.readyState === 1 && mongoose.models.QrexBlacklistIP) {
-        await mongoose.models.QrexBlacklistIP.findOneAndUpdate(
-          { ip },
-          { ip, reason: 'Auto-ban: flood layer1 (' + hits + ' hits/2min)', createdBy: 'system' },
-          { upsert: true }
-        );
-      }
-    } catch {}
+    await banIp(ip, 'Auto-ban flood layer1');
     return res.status(403).type('text/plain').send('-- banned');
   }
 
@@ -991,36 +1060,59 @@ app.get(['/api/raw/:id', '/api/v1/luascripts/public/:id/download', '/api/v1/luas
     return res.status(403).type('html').send(DENY_HTML);
   }
 
+  // Scrapers directos en capa1: devolver decoy (parece "código" corto inútil) para no filtrar token real
+  if (isScraperUa(ua) && !/roblox/i.test(ua)) {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Qrex-Layer', 'public');
+    return res.type('text/plain').send(decoyLua());
+  }
+
   if (!mongoReady && mongoose.connection.readyState !== 1) {
-    return res.status(503).type('text/plain').send('-- db offline');
+    return res.status(503).type('text/plain').send('-- offline');
   }
 
   const s = await Script.findOne({ id: req.params.id }).select('id');
   if (!s) return res.status(404).type('text/plain').send('-- not found');
 
+  const token = issueScriptToken(s.id, ip);
   const base = publicBase(req);
-  const cacheUrl = base + '/api/v1/luascripts/cache/public/' + s.id + '/download';
+  const cacheUrl = base + '/api/v1/luascripts/cache/public/' + s.id + '/download?t=' + encodeURIComponent(token);
 
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Robots-Tag', 'noindex');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   res.setHeader('X-Qrex-Layer', 'public');
   res.type('text/plain').send(buildDoubleLinkStub(cacheUrl));
 });
 
-// CAPA 2: script real ofuscado (+ key system)
+// CAPA 2: script real — requiere token de un solo uso
 app.get(['/api/v1/luascripts/cache/public/:id/download', '/api/cache/:id', '/api/raw/cache/:id'], rawBurstLimiter, rawLimiter, async (req, res) => {
   const ip = clientIp(req);
-  const hits = trackAbuse(ip);
+  const ua = req.headers['user-agent'] || '';
+  const hits = trackAbuse(ip, ua);
   if (hits >= AUTO_BAN_THRESHOLD) {
+    await banIp(ip, 'Auto-ban flood layer2');
     return res.status(403).type('text/plain').send('-- banned');
   }
   if (isBrowserReq(req)) {
     return res.status(403).type('html').send(DENY_HTML);
   }
+
+  const token = String(req.query.t || req.headers['x-qrex-token'] || '');
+  const ok = consumeScriptToken(req.params.id, token, ip);
+  if (!ok) {
+    // sin token / reutilizado / expirado → decoy (el bot .get suele caer aquí)
+    if (isScraperUa(ua) || hits > 12) {
+      await banIp(ip, 'Scraper cache without valid token');
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Qrex-Layer', 'cache');
+    return res.status(403).type('text/plain').send(decoyLua());
+  }
+
+  // token OK — servir real
   return serveRealScript(req, res, req.params.id);
 });
-
 
 // ========== VIP REDEEM ==========
 app.post('/api/vip/redeem', auth, needMongo, async (req, res) => {
