@@ -13,7 +13,7 @@ app.set('trust proxy', 1);
 const JWT_SECRET = process.env.JWT_SECRET || 'cambia-este-secret-por-uno-largo';
 const MONGO_URI = process.env.MONGO_URI || '';
 const VOLTILS_URL = process.env.VOLTILS_URL || 'https://voltils.nxtdev.xyz/v1/obfuscate';
-const VOLTILS_KEY = process.env.VOLTILS_KEY || 'voltils_1141173377189556324_c3102f5c336c3445442988c4366fe2eb10975a15';
+const VOLTILS_KEY = process.env.VOLTILS_KEY || 'voltils_1267954195982581782_b24de9d9410f9e7a0dcb7db05b18cda598f9415f';
 const VOLTILS_PRESET = process.env.VOLTILS_PRESET || 'normal';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/auto';
@@ -427,24 +427,39 @@ function needMongo(req, res, next) {
 }
 
 async function obfuscateWithVoltils(code) {
+  if (!VOLTILS_KEY) throw new Error('VOLTILS_KEY no configurada');
   const r = await fetch(VOLTILS_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + VOLTILS_KEY
+      'Authorization': 'Bearer ' + VOLTILS_KEY,
+      'Accept': 'application/json'
     },
-    body: JSON.stringify({ code: String(code || ''), preset: VOLTILS_PRESET }),
-    signal: AbortSignal.timeout(60000)
+    body: JSON.stringify({
+      code: String(code || ''),
+      preset: VOLTILS_PRESET || 'normal'
+    }),
+    signal: AbortSignal.timeout(90000)
   });
   const text = await r.text();
   let data = null;
   try { data = JSON.parse(text); } catch {}
-  // Accept several response shapes
-  const out = (data && (data.code || data.result || data.obfuscated || data.output || data.data))
-    || (typeof data === 'string' ? data : null)
-    || (!data && text && !text.trim().startsWith('{') ? text : null);
+  // Accept several response shapes from Voltils
+  let out = null;
+  if (data) {
+    if (typeof data === 'string') out = data;
+    else if (typeof data.code === 'string') out = data.code;
+    else if (typeof data.result === 'string') out = data.result;
+    else if (typeof data.obfuscated === 'string') out = data.obfuscated;
+    else if (typeof data.output === 'string') out = data.output;
+    else if (data.data && typeof data.data === 'string') out = data.data;
+    else if (data.data && typeof data.data.code === 'string') out = data.data.code;
+  }
+  if (!out && text && !text.trim().startsWith('{') && !text.trim().startsWith('[')) {
+    out = text;
+  }
   if (!r.ok || !out) {
-    const err = (data && (data.error || data.message)) || ('Voltils HTTP ' + r.status);
+    const err = (data && (data.error || data.message || data.detail)) || ('Voltils HTTP ' + r.status + (text ? ': ' + text.slice(0, 120) : ''));
     throw new Error(String(err));
   }
   return String(out);
@@ -464,13 +479,13 @@ function wrapWithEnvLogger(source) {
 }
 
 async function resolveObfuscated(source, mode) {
-  // Ofuscación obligatoria vía API interna. Branding QyrexObf. Sin env logger.
+  // Ofuscación obligatoria vía Voltils API. Sin env logger.
   const src = String(source || '');
   try {
     let code = await obfuscateWithVoltils(src);
     code = String(code || '');
-    if (!code.trim().startsWith('-- Protect by QyrexObf')) {
-      code = '-- Protect by QyrexObf\n' + code;
+    if (!code.trim().startsWith('-- Protected by Voltils')) {
+      code = '-- Protected by Voltils · https://discord.gg/f4HRYHTCnz\n' + code;
     }
     return { code, doObfuscate: true, obfMode: 'qrex' };
   } catch (e) {
@@ -794,6 +809,7 @@ function buildDoubleLinkStub(cacheUrl) {
   }
   return [
     '-- QrexApi Protected Loader',
+    '-- Protected by Voltils · https://discord.gg/f4HRYHTCnz',
     ...junk,
     'local function _g()',
     '  local u="' + u + '"',
@@ -829,8 +845,13 @@ const DENY_HTML = `<!DOCTYPE html>
 body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a0f;font-family:system-ui;color:#e4e4ed}
 .card{background:#111118;border:1px solid #1e1e2a;border-radius:20px;padding:40px;max-width:520px}
 .badge{color:#f87171;font-size:12px;font-weight:700;margin-bottom:12px}
+a{color:#a78bfa;text-decoration:none}a:hover{text-decoration:underline}
+.cred{margin-top:18px;font-size:12px;color:#6b6b80;line-height:1.5}
 </style></head><body><div class="card"><div class="badge">ACCESS DENIED</div>
-<h1>Protected by QrexApi</h1><p>This lua script cannot be viewed in a browser.</p>
+<h1>Protected by QrexApi</h1>
+<p>This lua script cannot be viewed in a browser.</p>
+<p class="cred">Ofuscacion y proteccion por <b style="color:#c4b5fd">Voltils</b><br/>
+<a href="https://discord.gg/f4HRYHTCnz" target="_blank" rel="noopener">discord.gg/f4HRYHTCnz</a></p>
 </div></body></html>`;
 
 async function serveRealScript(req, res, scriptId) {
@@ -1252,6 +1273,7 @@ function buildKeyGateLua({ apiBase, providerName, getKeyLink, scriptCode }) {
   const close = ']' + eq + ']';
 
   return `-- QrexApi Key System
+-- Protected by Voltils · https://discord.gg/f4HRYHTCnz
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -1510,7 +1532,7 @@ Hint.Size = UDim2.new(1, -32, 0, 18)
 Hint.Font = Enum.Font.Gotham
 Hint.TextSize = 10
 Hint.TextColor3 = Color3.fromRGB(110, 105, 128)
-Hint.Text = "Get Key abre Linkvertise / Lootlabs / Work.ink · key unica"
+Hint.Text = "Protected by Voltils · Get Key · key unica"
 Hint.Parent = Main
 
 GetKeyBtn.MouseButton1Click:Connect(function()
@@ -1593,6 +1615,7 @@ button{margin-top:14px;width:100%;border:0;border-radius:12px;padding:12px;font-
 <p>Provider: <b style="color:#ddd">${p}</b>. Copia la key y pégala en el KeySystem del script.</p>
 <div class="keybox" id="k">${k}</div>
 <button onclick="navigator.clipboard.writeText(document.getElementById('k').innerText);this.textContent='¡Copiada!'">Copiar key</button>
+<div class="meta">Protected by <b style="color:#c4b5fd">Voltils</b> · <a href="https://discord.gg/f4HRYHTCnz" style="color:#a78bfa">Discord</a></div>
 <div class="meta">Validez aprox: ${hours || 24}h · cada visita genera una key unica</div>
 </div></body></html>`;
 }
