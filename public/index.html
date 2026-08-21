@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>QrexApi &middot; Panel privado de scripts</title>
-<meta name="description" content="Panel QrexApi: obfuscacion Lua protegida por Voltils, key system HWID, webhooks y metricas en vivo."/>
+<meta name="description" content="Panel QrexApi: obfuscacion Lua, key system HWID, webhooks y metricas en vivo."/>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -425,6 +425,38 @@
     #appView main .p-8 { padding: 28px 32px !important; max-width: 1400px; }
   }
 
+
+  body.theme-gold{--bg:#0f0c05;--card:#1a160c;--accent:#fbbf24;--accent2:#f59e0b;--border:#3d3418}
+  body.theme-ocean{--bg:#030a12;--card:#0a1520;--accent:#38bdf8;--accent2:#818cf8;--border:#1a2a3a}
+  body.theme-mint{--bg:#040f0c;--card:#0a1814;--accent:#34d399;--accent2:#2dd4bf;--border:#1a2e28}
+  body.theme-sunset{--bg:#12060a;--card:#1a0c10;--accent:#fb7185;--accent2:#f97316;--border:#3a1a22}
+  body.vip-custom-bg #appView{
+    background-image: var(--vip-bg-image);
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+  }
+  body.vip-custom-bg #appView::before{
+    content:""; position:fixed; inset:0; z-index:0;
+    background: rgba(7,7,12,.55) !important;
+    filter: none !important; width:100% !important; height:100% !important;
+    border-radius:0 !important; animation:none !important;
+  }
+  body.vip-particles #vipParticleCanvas{display:block}
+  #vipParticleCanvas{display:none;position:fixed;inset:0;z-index:0;pointer-events:none}
+  body.vip-compact .sidebar{width:78px !important}
+  body.vip-compact .sidebar .nav-section,
+  body.vip-compact .sidebar .voltils-credit,
+  body.vip-compact .user-pill .flex-1,
+  body.vip-compact .user-pill button{display:none !important}
+  body.vip-compact .sidebar .nav-item{justify-content:center;padding:12px 8px}
+  body.vip-compact .sidebar .nav-item svg{margin:0}
+  body.vip-compact main.main-content{margin-left:78px !important}
+  body.vip-glass .card, body.vip-glass .sidebar{
+    backdrop-filter: blur(22px) saturate(1.3) !important;
+    background: rgba(17,17,24,.55) !important;
+  }
+
 </style>
 </head>
 <body>
@@ -513,14 +545,14 @@
         <button onclick="openLegal('support')">Soporte</button>
       </div>
       <p class="lg-legal" style="margin-top:14px;color:#3f3f52">&copy; 2026 QrexApi &middot; Todos los derechos reservados</p>
-      <p class="lg-legal" style="margin-top:10px">Protected by <a href="https://discord.gg/f4HRYHTCnz" target="_blank" rel="noopener" style="color:#c4b5fd;font-weight:600">Voltils</a>
-      · <a href="https://discord.gg/f4HRYHTCnz" target="_blank" rel="noopener">discord.gg/f4HRYHTCnz</a></p>
+
     </section>
   </div>
 </div>
 
 <!-- APP -->
 <div id="appView" style="display:none;min-height:100vh">
+  <canvas id="vipParticleCanvas"></canvas>
   <div class="mobile-topbar">
     <div class="mt-brand">
       <img src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="Qrex"/>
@@ -879,7 +911,6 @@
                   <div class="flex items-center gap-2 text-xs">
                     <span style="color:#8b8b9e">&lt;/&gt; Studio · Lua</span>
                     <span class="badge badge-green">Protected</span>
-                    <a class="voltils-credit" href="https://discord.gg/f4HRYHTCnz" target="_blank" rel="noopener">Protected by Voltils</a>
                     <span class="badge" id="studioLang">Lua 5.1</span>
                   </div>
                   <div class="studio-toolbar">
@@ -1133,7 +1164,7 @@ local Players = game:GetService(&quot;Players&quot;)
         <section id="page-changelog" class="page hidden">
           <h1 class="text-2xl font-bold mb-6">Changelog</h1>
           <div class="space-y-4 max-w-2xl">
-            <div class="card p-5"><div class="text-sm font-semibold" style="color:#a78bfa">v2.0 — Feature drop</div><div class="text-xs mt-2" style="color:#8b8b9e">Key System, Hub, VIP, Admin, Webhooks, Leaderboard, Assets, Templates, Versions, Status, Themes, Playground, IP Blacklist, límite 15 scripts (ilimitado VIP). Ofuscacion: <b style="color:#c4b5fd">Voltils</b>.</div></div>
+            <div class="card p-5"><div class="text-sm font-semibold" style="color:#a78bfa">v2.0 — Feature drop</div><div class="text-xs mt-2" style="color:#8b8b9e">Key System, Hub, VIP, Admin, Webhooks, Leaderboard, Assets, Templates, Versions, Status, Themes, Playground, IP Blacklist, límite 15 scripts (ilimitado VIP).</div></div>
             <div class="card p-5"><div class="text-sm font-semibold">v1.0 — Launch</div><div class="text-xs mt-2" style="color:#8b8b9e">Auth usuario/contraseña, scripts ofuscados, analytics, access denied page.</div></div>
           </div>
         </section>
@@ -1209,7 +1240,7 @@ local Players = game:GetService(&quot;Players&quot;)
             </div>
             <div class="card p-6">
               <div class="text-sm font-semibold mb-1">Preferencias</div>
-              <div class="text-xs mb-4" style="color:#5a5a6e">Opciones locales del panel</div>
+              <div class="text-xs mb-4" style="color:#5a5a6e">Opciones del panel</div>
               <label class="flex items-center justify-between py-2 cursor-pointer">
                 <span class="text-sm" style="color:#a0a0b0">Animaciones</span>
                 <input type="checkbox" id="prefAnim" checked onchange="toggleAnim(this.checked)" style="width:auto;accent-color:#7c3aed"/>
@@ -1227,6 +1258,57 @@ local Players = game:GetService(&quot;Players&quot;)
                   <button class="btn-ghost text-xs" onclick="setTheme('theme-blood')">Blood</button>
                 </div>
               </div>
+            </div>
+
+            <div class="card p-6" id="vipExtrasCard" style="border-color:#3d3418">
+              <div class="flex items-center justify-between gap-2 mb-1">
+                <div class="text-sm font-semibold" style="color:#fbbf24">✦ VIP Studio</div>
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded" style="background:#3d3418;color:#fbbf24;border:1px solid #5c4d1f">VIP</span>
+              </div>
+              <p class="text-xs mb-4" style="color:#8b8b9e">Fondo personalizado, temas extra, acento y más. Solo cuentas VIP.</p>
+
+              <label class="field">Fondo (URL imagen)</label>
+              <div class="flex gap-2 mb-3">
+                <input id="vipBgUrl" placeholder="https://...jpg / png / gif" class="flex-1 text-xs"/>
+                <button type="button" class="btn-primary text-xs whitespace-nowrap" onclick="applyVipBg()">Aplicar</button>
+              </div>
+              <div class="flex flex-wrap gap-2 mb-4">
+                <button type="button" class="btn-ghost text-xs" onclick="setVipBgPreset('aurora')">Aurora</button>
+                <button type="button" class="btn-ghost text-xs" onclick="setVipBgPreset('grid')">Grid</button>
+                <button type="button" class="btn-ghost text-xs" onclick="setVipBgPreset('mesh')">Mesh</button>
+                <button type="button" class="btn-ghost text-xs" onclick="setVipBgPreset('none')">Quitar fondo</button>
+              </div>
+
+              <label class="field">Color de acento</label>
+              <div class="flex flex-wrap gap-2 mb-4 items-center">
+                <input type="color" id="vipAccent" value="#7c3aed" style="width:44px;height:36px;padding:2px;border-radius:8px;background:#0c0c12;border:1px solid #252533"/>
+                <button type="button" class="btn-ghost text-xs" onclick="applyVipAccent()">Usar color</button>
+                <button type="button" class="btn-ghost text-xs" onclick="resetVipAccent()">Reset</button>
+              </div>
+
+              <label class="flex items-center justify-between py-2 cursor-pointer">
+                <span class="text-sm" style="color:#a0a0b0">Partículas de fondo</span>
+                <input type="checkbox" id="vipParticles" onchange="toggleVipParticles(this.checked)" style="width:auto;accent-color:#fbbf24"/>
+              </label>
+              <label class="flex items-center justify-between py-2 cursor-pointer">
+                <span class="text-sm" style="color:#a0a0b0">Sidebar compacta</span>
+                <input type="checkbox" id="vipCompact" onchange="toggleVipCompact(this.checked)" style="width:auto;accent-color:#fbbf24"/>
+              </label>
+              <label class="flex items-center justify-between py-2 cursor-pointer">
+                <span class="text-sm" style="color:#a0a0b0">Blur fuerte (glass)</span>
+                <input type="checkbox" id="vipGlass" onchange="toggleVipGlass(this.checked)" style="width:auto;accent-color:#fbbf24"/>
+              </label>
+
+              <div class="mt-4">
+                <div class="text-xs mb-2" style="color:#6b6b80">Temas VIP</div>
+                <div class="flex flex-wrap gap-2">
+                  <button class="btn-ghost text-xs" onclick="setTheme('theme-gold')">Gold</button>
+                  <button class="btn-ghost text-xs" onclick="setTheme('theme-ocean')">Ocean</button>
+                  <button class="btn-ghost text-xs" onclick="setTheme('theme-mint')">Mint</button>
+                  <button class="btn-ghost text-xs" onclick="setTheme('theme-sunset')">Sunset</button>
+                </div>
+              </div>
+              <p id="vipLockHint" class="text-[11px] mt-3 hidden" style="color:#f87171">Activa VIP (canjea llave) para usar estas opciones.</p>
             </div>
           </div>
         </section>
@@ -1309,6 +1391,7 @@ function showApp(user){
   loadStats();
   loadScripts();
   loadAnalytics();
+  try { loadVipPrefs(); } catch(e) {}
 }
 
 function toggleAnim(on){
@@ -1350,7 +1433,7 @@ async function redeemVipKey(){
     if (!r.ok) throw new Error(d.error || 'Error');
     toast(d.message || 'VIP activado');
     if (input) input.value = '';
-    await refreshVipStatus();
+    await refreshVipStatus(); loadVipPrefs();
     try {
       const me = await fetch('/api/me', { headers: headers() }).then(x => x.json());
       if (me && me.username) { currentUser = me; applyUserUi(me); }
@@ -1380,6 +1463,146 @@ async function genVipKeysAdmin(){
     toast((d.keys||[]).length + ' llaves VIP generadas');
   } catch(e){ toast(e.message,'err'); }
 }
+
+
+function requireVip(){
+  if (currentUser && currentUser.premium) return true;
+  toast('Solo VIP', 'err');
+  const hint = document.getElementById('vipLockHint');
+  if (hint) hint.classList.remove('hidden');
+  return false;
+}
+function applyVipBg(){
+  if (!requireVip()) return;
+  const url = (document.getElementById('vipBgUrl')||{}).value || '';
+  if (!url.trim()) { toast('Pega una URL', 'err'); return; }
+  document.body.classList.add('vip-custom-bg');
+  document.body.style.setProperty('--vip-bg-image', 'linear-gradient(rgba(7,7,12,.55),rgba(7,7,12,.75)),url("'+url.trim().replace(/"/g,'')+'")');
+  localStorage.setItem('qrex_vip_bg', url.trim());
+  toast('Fondo aplicado');
+}
+function setVipBgPreset(name){
+  if (!requireVip()) return;
+  const presets = {
+    aurora: 'radial-gradient(ellipse at 20% 20%, rgba(124,58,237,.35), transparent 50%), radial-gradient(ellipse at 80% 80%, rgba(56,189,248,.25), transparent 50%), #07070c',
+    grid: 'linear-gradient(rgba(124,58,237,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,.06) 1px, transparent 1px), #07070c',
+    mesh: 'radial-gradient(at 40% 20%, rgba(167,139,250,.2) 0px, transparent 50%), radial-gradient(at 80% 0%, rgba(251,191,36,.12) 0px, transparent 50%), radial-gradient(at 0% 50%, rgba(52,211,153,.12) 0px, transparent 50%), #07070c',
+    none: ''
+  };
+  if (name === 'none') {
+    document.body.classList.remove('vip-custom-bg');
+    document.body.style.removeProperty('--vip-bg-image');
+    localStorage.removeItem('qrex_vip_bg');
+    localStorage.removeItem('qrex_vip_bg_preset');
+    const inp = document.getElementById('vipBgUrl'); if (inp) inp.value = '';
+    toast('Fondo quitado');
+    return;
+  }
+  document.body.classList.add('vip-custom-bg');
+  document.body.style.setProperty('--vip-bg-image', presets[name] || presets.aurora);
+  localStorage.setItem('qrex_vip_bg_preset', name);
+  localStorage.removeItem('qrex_vip_bg');
+  toast('Preset: ' + name);
+}
+function applyVipAccent(){
+  if (!requireVip()) return;
+  const c = (document.getElementById('vipAccent')||{}).value || '#7c3aed';
+  document.documentElement.style.setProperty('--accent', c);
+  document.body.style.setProperty('--accent', c);
+  localStorage.setItem('qrex_vip_accent', c);
+  toast('Acento actualizado');
+}
+function resetVipAccent(){
+  document.documentElement.style.removeProperty('--accent');
+  document.body.style.removeProperty('--accent');
+  localStorage.removeItem('qrex_vip_accent');
+  toast('Acento reset');
+}
+function toggleVipParticles(on){
+  if (on && !requireVip()) { document.getElementById('vipParticles').checked = false; return; }
+  document.body.classList.toggle('vip-particles', !!on);
+  localStorage.setItem('qrex_vip_particles', on ? '1' : '0');
+  if (on) startVipParticles(); else stopVipParticles();
+}
+function toggleVipCompact(on){
+  if (on && !requireVip()) { document.getElementById('vipCompact').checked = false; return; }
+  document.body.classList.toggle('vip-compact', !!on);
+  localStorage.setItem('qrex_vip_compact', on ? '1' : '0');
+  var main = document.querySelector('#appView main.main-content');
+  if (main && !isMobileNav()) main.style.marginLeft = on ? '78px' : '260px';
+}
+function toggleVipGlass(on){
+  if (on && !requireVip()) { document.getElementById('vipGlass').checked = false; return; }
+  document.body.classList.toggle('vip-glass', !!on);
+  localStorage.setItem('qrex_vip_glass', on ? '1' : '0');
+}
+let __vipPartAnim = null;
+function startVipParticles(){
+  const canvas = document.getElementById('vipParticleCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+  const dots = Array.from({length: 40}, () => ({
+    x: Math.random()*innerWidth, y: Math.random()*innerHeight,
+    r: Math.random()*1.8+0.4, vx: (Math.random()-0.5)*0.4, vy: (Math.random()-0.5)*0.4
+  }));
+  function frame(){
+    if (!document.body.classList.contains('vip-particles')) return;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = 'rgba(167,139,250,0.35)';
+    for (const d of dots) {
+      d.x += d.vx; d.y += d.vy;
+      if (d.x < 0 || d.x > canvas.width) d.vx *= -1;
+      if (d.y < 0 || d.y > canvas.height) d.vy *= -1;
+      ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,Math.PI*2); ctx.fill();
+    }
+    __vipPartAnim = requestAnimationFrame(frame);
+  }
+  cancelAnimationFrame(__vipPartAnim);
+  frame();
+}
+function stopVipParticles(){
+  cancelAnimationFrame(__vipPartAnim);
+  const canvas = document.getElementById('vipParticleCanvas');
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    ctx && ctx.clearRect(0,0,canvas.width,canvas.height);
+  }
+}
+function loadVipPrefs(){
+  const prem = !!(currentUser && currentUser.premium);
+  const lock = document.getElementById('vipLockHint');
+  if (lock) lock.classList.toggle('hidden', prem);
+  if (!prem) return;
+  const bg = localStorage.getItem('qrex_vip_bg');
+  const preset = localStorage.getItem('qrex_vip_bg_preset');
+  if (bg) {
+    const inp = document.getElementById('vipBgUrl'); if (inp) inp.value = bg;
+    document.body.classList.add('vip-custom-bg');
+    document.body.style.setProperty('--vip-bg-image', 'linear-gradient(rgba(7,7,12,.55),rgba(7,7,12,.75)),url("'+bg.replace(/"/g,'')+'")');
+  } else if (preset) setVipBgPreset(preset);
+  const acc = localStorage.getItem('qrex_vip_accent');
+  if (acc) {
+    const el = document.getElementById('vipAccent'); if (el) el.value = acc;
+    document.body.style.setProperty('--accent', acc);
+  }
+  if (localStorage.getItem('qrex_vip_particles') === '1') {
+    const el = document.getElementById('vipParticles'); if (el) el.checked = true;
+    toggleVipParticles(true);
+  }
+  if (localStorage.getItem('qrex_vip_compact') === '1') {
+    const el = document.getElementById('vipCompact'); if (el) el.checked = true;
+    toggleVipCompact(true);
+  }
+  if (localStorage.getItem('qrex_vip_glass') === '1') {
+    const el = document.getElementById('vipGlass'); if (el) el.checked = true;
+    toggleVipGlass(true);
+  }
+}
+// patch setTheme to require VIP for gold/ocean/mint/sunset
+const __setThemeOrig = typeof setTheme === 'function' ? setTheme : null;
 
 function logout(){ token = ''; localStorage.removeItem('qrex_token'); location.reload(); }
 
@@ -1687,7 +1910,7 @@ function renderScripts(list){
           '<div class="text-xs mt-0.5 truncate" style="color:#5a5a6e">'+esc(s.description||'Sin descripción')+'</div>'+
           '<div class="flex flex-wrap gap-2 mt-2">'+
             '<span class="chip">'+(s.executions||0)+' runs</span>'+
-            '<span class="chip">'+(s.obfMode==='local'?'XOR×5':(s.obfMode==='none'||s.doObfuscate===false)?'Plain+AT':'Voltils')+'</span>'+
+            '<span class="chip">'+(s.obfMode==='local'?'XOR×5':(s.obfMode==='none'||s.doObfuscate===false)?'Plain+AT':'OFB')+'</span>'+
             (date ? '<span class="chip">'+esc(date)+'</span>' : '')+
             '<span class="chip" style="font-family:monospace;font-size:10px">'+esc((s.id||'').slice(0,10))+'…</span>'+
           '</div>'+
@@ -2185,7 +2408,6 @@ function updateLoaderSnippet(){
   const sel = document.getElementById('keyProvSelect');
   const provName = sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : 'MyProvider';
   const snip = `-- QrexApi Key Loader
--- Protected by Voltils · https://discord.gg/f4HRYHTCnz
 local HttpService = game:GetService("HttpService")
 local cfg = {
   api = "${base}",
@@ -2222,7 +2444,12 @@ end
 
 
 function setTheme(cls){
-  document.body.classList.remove('theme-neon','theme-cyber','theme-blood');
+  const vipThemes = ['theme-gold','theme-ocean','theme-mint','theme-sunset'];
+  if (cls && vipThemes.includes(cls) && !(currentUser && currentUser.premium)) {
+    toast('Tema VIP — canjea una llave', 'err');
+    return;
+  }
+  document.body.classList.remove('theme-neon','theme-cyber','theme-blood','theme-gold','theme-ocean','theme-mint','theme-sunset');
   if (cls) document.body.classList.add(cls);
   localStorage.setItem('qrex_theme', cls || '');
 }
