@@ -475,12 +475,43 @@
   #appView > .flex{z-index:auto!important}
   #appView main.main-content{margin-left:0!important;width:100%!important}
   .mt-open{
-    display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;cursor:pointer;
-    border:1px solid rgba(124,58,237,.45);background:linear-gradient(135deg,rgba(124,58,237,.28),rgba(124,58,237,.10));
-    color:#d6c8ff;font-size:13.5px;font-weight:600;transition:transform .2s,box-shadow .2s,filter .2s;
+    display:inline-flex;align-items:center;justify-content:center;gap:0;
+    width:46px;height:46px;padding:0;border-radius:14px;cursor:pointer;
+    border:1px solid rgba(124,58,237,.45);
+    background:linear-gradient(135deg,rgba(124,58,237,.32),rgba(124,58,237,.12));
+    color:#e9e0ff;transition:transform .25s cubic-bezier(.22,1,.36,1),box-shadow .25s,filter .2s,background .25s,border-color .25s;
+    -webkit-tap-highlight-color:transparent;touch-action:manipulation;
   }
-  .mt-open:hover{transform:translateY(-1px);filter:brightness(1.08);box-shadow:0 10px 26px -12px rgba(124,58,237,.8)}
-  .mt-open svg{width:18px;height:18px}
+  .mt-open:hover{transform:translateY(-1px) scale(1.03);filter:brightness(1.1);box-shadow:0 12px 28px -12px rgba(124,58,237,.85)}
+  .mt-open:active{transform:scale(.94)}
+  body.sidebar-open .mt-open{
+    background:linear-gradient(135deg,rgba(248,113,113,.25),rgba(124,58,237,.15));
+    border-color:rgba(248,113,113,.4);
+  }
+  .burger-icon{position:relative;width:22px;height:16px;display:block}
+  .burger-icon span{
+    position:absolute;left:0;right:0;height:2.5px;border-radius:4px;background:currentColor;
+    transition:transform .32s cubic-bezier(.22,1,.36,1),opacity .22s,top .32s cubic-bezier(.22,1,.36,1);
+  }
+  .burger-icon span:nth-child(1){top:0}
+  .burger-icon span:nth-child(2){top:6.5px}
+  .burger-icon span:nth-child(3){top:13px}
+  body.sidebar-open .burger-icon span:nth-child(1){top:6.5px;transform:rotate(45deg)}
+  body.sidebar-open .burger-icon span:nth-child(2){opacity:0;transform:scaleX(0)}
+  body.sidebar-open .burger-icon span:nth-child(3){top:6.5px;transform:rotate(-45deg)}
+  /* PC + móvil: barra siempre, menú drawer */
+  @media (min-width: 901px){
+    .mobile-topbar{padding:12px 18px}
+    .mt-open{width:48px;height:48px}
+    .burger-icon{width:24px;height:17px}
+    .burger-icon span:nth-child(2){top:7px}
+    .burger-icon span:nth-child(3){top:14px}
+    body.sidebar-open .burger-icon span:nth-child(1),
+    body.sidebar-open .burger-icon span:nth-child(3){top:7px}
+  }
+  @media (max-width: 480px){
+    .mt-open{width:44px;height:44px;border-radius:12px}
+  }
 
   /* ===== OVERVIEW HERO ===== */
   .ov-hero{
@@ -614,9 +645,10 @@
       <img src="https://i.postimg.cc/rynCf10c/25c9cf002db2d61220072a995411f584.png" alt="Qrex"/>
       <b>QrexApi</b>
     </div>
-    <button type="button" class="mt-open" id="menuBtn" aria-label="Abrir menu" onclick="toggleSidebar()">
-      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-      Menu
+    <button type="button" class="mt-open" id="menuBtn" aria-label="Abrir menu" aria-expanded="false" onclick="toggleSidebar()">
+      <span class="burger-icon" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </span>
     </button>
   </div>
   <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
@@ -1768,15 +1800,14 @@ function isMobileNav(){ return true; }
 function openSidebar(){
   document.body.classList.add('sidebar-open');
   var b=document.getElementById('menuBtn');
-  if(b){ b.innerHTML='<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg> Cerrar'; }
-
+  if(b){ b.setAttribute('aria-expanded','true'); b.setAttribute('aria-label','Cerrar menu'); }
   const ov = document.getElementById('sidebarOverlay');
   if (ov) ov.classList.add('show');
 }
 function closeSidebar(){
   document.body.classList.remove('sidebar-open');
   var b=document.getElementById('menuBtn');
-  if(b){ b.innerHTML='<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg> Menu'; }
+  if(b){ b.setAttribute('aria-expanded','false'); b.setAttribute('aria-label','Abrir menu'); }
   const ov = document.getElementById('sidebarOverlay');
   if (ov) ov.classList.remove('show');
 }
