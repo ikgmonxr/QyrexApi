@@ -1532,7 +1532,7 @@ Hint.Size = UDim2.new(1, -32, 0, 18)
 Hint.Font = Enum.Font.Gotham
 Hint.TextSize = 10
 Hint.TextColor3 = Color3.fromRGB(110, 105, 128)
-Hint.Text = "Protected by Voltils · Get Key · key unica"
+Hint.Text = "La key se guarda localmente · QrexApi"
 Hint.Parent = Main
 
 GetKeyBtn.MouseButton1Click:Connect(function()
