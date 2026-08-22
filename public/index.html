@@ -544,6 +544,23 @@
   .ov-stat{position:relative;overflow:hidden;border-radius:18px;padding:20px;border:1px solid #1c1c28;background:rgba(17,17,24,.85)}
   .ov-stat .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#6b6b80;font-weight:700}
   .ov-stat .val{font-size:30px;font-weight:800;letter-spacing:-.02em;margin-top:8px}
+
+  .log-card{background:#12121a;border:1px solid #1e1e2a;border-radius:16px;padding:14px 16px;margin-bottom:12px}
+  .log-card .log-top{display:flex;align-items:center;gap:12px}
+  .log-av{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#4c1d95);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex-shrink:0;font-size:14px}
+  .log-meta{flex:1;min-width:0}
+  .log-meta .ex{font-size:12px;color:#a78bfa;font-weight:600}
+  .log-meta .un{font-size:13px;color:#e4e4ed;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .log-time{font-size:11px;color:#6b6b80;flex-shrink:0}
+  .log-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .log-actions button{font-size:12px;padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:600}
+  .btn-ban-hwid{background:transparent;border:1px solid rgba(248,113,113,.35);color:#f87171}
+  .btn-ban-ip{background:transparent;border:1px solid rgba(251,191,36,.35);color:#fbbf24}
+  .log-summary{background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);color:#fbbf24;border-radius:12px;padding:12px 14px;font-size:13px;font-weight:600;margin-bottom:16px}
+  @media(max-width:600px){
+    .log-actions button{flex:1;min-width:140px}
+  }
+
 </style>
 </head>
 <body>
@@ -676,6 +693,10 @@
         <button class="nav-item" data-page="executions" onclick="go('executions')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
           Analytics
+        </button>
+        <button class="nav-item" data-page="logs" onclick="go('logs')">
+          <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+          Logs
         </button>
         <button class="nav-item" data-page="status" onclick="go('status')">
           <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -1067,6 +1088,18 @@ local Players = game:GetService(&quot;Players&quot;)
               </button>
             </div>
           </div>
+        </section>
+
+
+        <section id="page-logs" class="page hidden">
+          <h1 class="text-2xl font-bold mb-2">Logs</h1>
+          <p class="text-xs mb-4" style="color:#5a5a6e">Quién ejecuta tus scripts · ban por HWID o IP</p>
+          <div class="log-summary" id="logsSummary">Cargando…</div>
+          <div class="mb-4 flex gap-2">
+            <input id="logsSearch" placeholder="Buscar usuario / executor / IP…" oninput="filterLogs()" class="flex-1"/>
+            <button class="btn-ghost text-sm" onclick="loadLogs()">Refresh</button>
+          </div>
+          <div id="logsList"></div>
         </section>
 
         <!-- ANALYTICS / EXECUTIONS CON GRÁFICAS -->
@@ -1793,7 +1826,7 @@ window.onload = function(){
   updateLines();
 };
 
-const pageNames = { overview:'Overview', scripts:'Lua Scripts', hub:'Script Hub', keys:'Key System', webhooks:'Webhooks', leaderboard:'Leaderboard', assets:'My Assets', templates:'Templates', status:'System Status', playground:'API Playground', changelog:'Changelog', create:'Create Script', studio:'Studio', executions:'Analytics', apiinfo:'API Info', settings:'Settings', admin:'Admin Panel' };
+const pageNames = { overview:'Overview', scripts:'Lua Scripts', hub:'Script Hub', keys:'Key System', webhooks:'Webhooks', leaderboard:'Leaderboard', assets:'My Assets', templates:'Templates', status:'System Status', playground:'API Playground', changelog:'Changelog', create:'Create Script', studio:'Studio', executions:'Analytics', logs:'Logs', apiinfo:'API Info', settings:'Settings', admin:'Admin Panel' };
 
 
 function isMobileNav(){ return true; }
@@ -1836,6 +1869,7 @@ function go(p){
   if (p === 'admin') loadAdmin();
   if (p === 'overview') { loadStats(); loadAnalytics(); }
   if (p === 'executions') loadAnalytics();
+  if (p === 'logs') loadLogs();
   if (p === 'settings') { try { refreshVipStatus(); } catch(e) {} }
 }
 
@@ -2890,6 +2924,94 @@ function daysAgo(n){
 
 function fmtDay(d){
   return (d.getMonth()+1) + '/' + d.getDate();
+}
+
+
+let __logsCache = [];
+function timeAgo(d){
+  if(!d) return '-';
+  const t = new Date(d).getTime();
+  const s = Math.floor((Date.now()-t)/1000);
+  if(s<60) return 'agora';
+  if(s<3600) return Math.floor(s/60)+' min';
+  if(s<86400) return Math.floor(s/3600)+' h';
+  return new Date(d).toLocaleString();
+}
+function initials(name){
+  const n = (name||'?').trim();
+  return (n.slice(0,2)||'?').toUpperCase();
+}
+async function loadLogs(){
+  try{
+    const r = await fetch('/api/logs', { headers: headers() });
+    if(!r.ok){ toast('No se pudieron cargar logs','err'); return; }
+    __logsCache = await r.json();
+    renderLogs(__logsCache);
+  }catch(e){ toast('Error logs','err'); }
+}
+function filterLogs(){
+  const q = ((document.getElementById('logsSearch')||{}).value||'').toLowerCase();
+  if(!q) return renderLogs(__logsCache);
+  renderLogs(__logsCache.filter(e =>
+    (e.username||'').toLowerCase().includes(q) ||
+    (e.executor||'').toLowerCase().includes(q) ||
+    (e.ip||'').toLowerCase().includes(q) ||
+    (e.scriptName||'').toLowerCase().includes(q) ||
+    (e.hwid||'').toLowerCase().includes(q)
+  ));
+}
+function renderLogs(list){
+  const sum = document.getElementById('logsSummary');
+  const box = document.getElementById('logsList');
+  if(!box) return;
+  const n = (list||[]).length;
+  if(sum) sum.textContent = n + ' execução' + (n===1?'':'ões');
+  if(!list || !list.length){
+    box.innerHTML = '<div class="card p-8 text-center" style="color:#5a5a6e">Sin ejecuciones aún</div>';
+    return;
+  }
+  box.innerHTML = list.map(e => {
+    const un = e.username || 'Desconocido';
+    const ex = e.executor || 'Executor';
+    const ip = e.ip || '';
+    const hw = e.hwid || '';
+    const sc = e.scriptName || e.scriptId || '';
+    return '<div class="log-card">'+
+      '<div class="log-top">'+
+        '<div class="log-av">'+esc(initials(un))+'</div>'+
+        '<div class="log-meta">'+
+          '<div class="ex">&lt;/&gt; '+esc(ex)+(sc?' · '+esc(sc):'')+'</div>'+
+          '<div class="un">'+esc(un)+'</div>'+
+          '<div class="text-[11px]" style="color:#5a5a6e">IP '+esc(ip||'-')+(hw?' · HWID '+esc(hw.slice(0,18))+'…':'')+'</div>'+
+        '</div>'+
+        '<div class="log-time">'+esc(timeAgo(e.createdAt))+'</div>'+
+      '</div>'+
+      '<div class="log-actions">'+
+        '<button type="button" class="btn-ban-hwid" onclick="banHwid('+JSON.stringify(hw)+')">Bloquear HWID</button>'+
+        '<button type="button" class="btn-ban-ip" onclick="banIp('+JSON.stringify(ip)+')">Banir via IP</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+async function banIp(ip){
+  if(!ip) return toast('Sin IP','err');
+  if(!confirm('Banear IP '+ip+'?')) return;
+  try{
+    const r = await fetch('/api/ban/ip',{method:'POST',headers:headers(),body:JSON.stringify({ip,reason:'Ban from Logs'})});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error||'Error');
+    toast('IP baneada');
+  }catch(e){ toast(e.message,'err'); }
+}
+async function banHwid(hwid){
+  if(!hwid) return toast('Sin HWID (aún no reportado)','err');
+  if(!confirm('Bloquear HWID?')) return;
+  try{
+    const r = await fetch('/api/ban/hwid',{method:'POST',headers:headers(),body:JSON.stringify({hwid,reason:'HWID ban from Logs'})});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error||'Error');
+    toast('HWID bloqueado');
+  }catch(e){ toast(e.message,'err'); }
 }
 
 async function loadAnalytics(){
