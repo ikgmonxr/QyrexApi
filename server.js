@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -315,6 +316,19 @@ const Execution = mongoose.models.QrexExecution || mongoose.model('QrexExecution
   ownerId: String,
   ip: String,
   userAgent: String,
+  username: { type: String, default: '' },
+  userId: { type: String, default: '' },
+  hwid: { type: String, default: '' },
+  executor: { type: String, default: '' },
+  placeId: { type: String, default: '' },
+  createdAt: { type: Date, default: Date.now }
+}));
+
+const BlacklistHWID = mongoose.models.QrexBlacklistHWID || mongoose.model('QrexBlacklistHWID', new mongoose.Schema({
+  hwid: { type: String, unique: true, required: true },
+  reason: { type: String, default: '' },
+  ownerId: String,
+  createdBy: String,
   createdAt: { type: Date, default: Date.now }
 }));
 
@@ -875,6 +889,78 @@ app.delete('/api/scripts/:id', auth, needMongo, async (req, res) => {
 });
 
 
+
+// ========== PROTECTIONS (DTC + OP Guard) ==========
+let DTC_LUA = '';
+let OP_GUARD_LUA = '';
+try {
+  const pDir = path.join(__dirname, 'protections');
+  DTC_LUA = fs.readFileSync(path.join(pDir, 'dtc.lua'), 'utf8');
+  OP_GUARD_LUA = fs.readFileSync(path.join(pDir, 'op_guard.lua'), 'utf8')
+    .replace(/local debug_mode = true/, 'local debug_mode = false')
+    .replace(/local require_executor_hint = true/, 'local require_executor_hint = false');
+  console.log('Protections loaded: DTC', DTC_LUA.length, 'OP', OP_GUARD_LUA.length);
+} catch (e) {
+  console.error('Could not load protections/', e.message);
+}
+
+function buildExecReporterLua(apiBase, scriptId) {
+  const base = String(apiBase || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const sid = String(scriptId || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return [
+    '--[[ Qyrex exec reporter ]]',
+    'local function __qyrexReport()',
+    '  pcall(function()',
+    '    local HttpService = game:GetService("HttpService")',
+    '    local Players = game:GetService("Players")',
+    '    local lp = Players.LocalPlayer',
+    '    local username = (lp and lp.Name) or "?"',
+    '    local userId = (lp and tostring(lp.UserId)) or "0"',
+    '    local placeId = tostring(game.PlaceId or 0)',
+    '    local hwid = ""',
+    '    pcall(function()',
+    '      if gethwid then hwid = tostring(gethwid())',
+    '      elseif gethivehardwareid then hwid = tostring(gethivehardwareid())',
+    '      else',
+    '        local ok, svc = pcall(function() return game:GetService("RbxAnalyticsService") end)',
+    '        if ok and svc then hwid = tostring(svc:GetClientId()) end',
+    '      end',
+    '    end)',
+    '    local executor = "unknown"',
+    '    pcall(function()',
+    '      if identifyexecutor then executor = tostring(identifyexecutor())',
+    '      elseif getexecutorname then executor = tostring(getexecutorname()) end',
+    '    end)',
+    '    local body = HttpService:JSONEncode({',
+    '      scriptId = "' + sid + '",',
+    '      username = username,',
+    '      userId = userId,',
+    '      hwid = hwid,',
+    '      executor = executor,',
+    '      placeId = placeId',
+    '    })',
+    '    local url = "' + base + '/api/exec-ping"',
+    '    local req = (syn and syn.request) or http_request or request or (http and http.request)',
+    '    if req then',
+    '      req({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })',
+    '    end',
+    '  end)',
+    'end',
+    'task.spawn(__qyrexReport)',
+    ''
+  ].join('\n');
+}
+
+function wrapDeliveredScript(code, apiBase, scriptId) {
+  const parts = [];
+  if (DTC_LUA) parts.push(DTC_LUA);
+  if (OP_GUARD_LUA) parts.push(OP_GUARD_LUA);
+  parts.push(buildExecReporterLua(apiBase, scriptId));
+  parts.push(String(code || ''));
+  return parts.join('\n');
+}
+
+
 // ========== DOUBLE LINK + ANTI-SCRAPE ==========
 function buildDoubleLinkStub(cacheUrl) {
   const u = String(cacheUrl).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -978,6 +1064,11 @@ async function serveRealScript(req, res, scriptId) {
     } catch (e) {
       console.error('key gate wrap', e);
     }
+  }
+  try {
+    payload = wrapDeliveredScript(payload, publicBase(req), s.id);
+  } catch (e) {
+    console.error('wrapDeliveredScript', e.message);
   }
   res.type('text/plain').send(payload);
 }
@@ -1146,6 +1237,105 @@ app.get('/api/executions', auth, needMongo, async (req, res) => {
   const logs = await Execution.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).limit(100);
   res.json(logs);
 });
+
+app.post('/api/exec-ping', rawBurstLimiter, async (req, res) => {
+  try {
+    const ip = clientIp(req);
+    const { scriptId, username, userId, hwid, executor, placeId } = req.body || {};
+    if (!scriptId) return res.status(400).json({ error: 'scriptId required' });
+
+    if (hwid && mongoose.connection.readyState === 1) {
+      const banned = await BlacklistHWID.findOne({ hwid: String(hwid) }).lean();
+      if (banned) return res.status(403).json({ error: 'HWID banned', reason: banned.reason || '' });
+    }
+
+    if (!mongoReady && mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'offline' });
+    }
+
+    const script = await Script.findOne({ id: String(scriptId) });
+    if (!script) return res.status(404).json({ error: 'script not found' });
+
+    const since = new Date(Date.now() - 2 * 60 * 1000);
+    let log = await Execution.findOne({
+      scriptId: script.id,
+      ip,
+      createdAt: { $gte: since }
+    }).sort({ createdAt: -1 });
+
+    if (log) {
+      log.username = String(username || log.username || '').slice(0, 40);
+      log.userId = String(userId || log.userId || '').slice(0, 24);
+      log.hwid = String(hwid || log.hwid || '').slice(0, 128);
+      log.executor = String(executor || log.executor || '').slice(0, 64);
+      log.placeId = String(placeId || log.placeId || '').slice(0, 24);
+      await log.save();
+    } else {
+      await Execution.create({
+        scriptId: script.id,
+        scriptName: script.name,
+        ownerId: script.ownerId,
+        ip,
+        userAgent: req.headers['user-agent'] || '',
+        username: String(username || '').slice(0, 40),
+        userId: String(userId || '').slice(0, 24),
+        hwid: String(hwid || '').slice(0, 128),
+        executor: String(executor || '').slice(0, 64),
+        placeId: String(placeId || '').slice(0, 24)
+      });
+    }
+
+    fireWebhooks(script.ownerId, 'script_exec', {
+      scriptId: script.id,
+      name: script.name,
+      username,
+      executor,
+      ip: String(ip).split(',')[0]
+    });
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'error' });
+  }
+});
+
+app.post('/api/ban/ip', auth, needMongo, async (req, res) => {
+  try {
+    const ip = String((req.body || {}).ip || '').trim();
+    const reason = String((req.body || {}).reason || 'Banned from Logs').slice(0, 200);
+    if (!ip) return res.status(400).json({ error: 'IP required' });
+    await BlacklistIP.findOneAndUpdate(
+      { ip },
+      { ip, reason, createdBy: req.user.username || req.user.sub },
+      { upsert: true }
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/ban/hwid', auth, needMongo, async (req, res) => {
+  try {
+    const hwid = String((req.body || {}).hwid || '').trim();
+    const reason = String((req.body || {}).reason || 'HWID banned from Logs').slice(0, 200);
+    if (!hwid) return res.status(400).json({ error: 'HWID required' });
+    await BlacklistHWID.findOneAndUpdate(
+      { hwid },
+      { hwid, reason, ownerId: req.user.sub, createdBy: req.user.username || req.user.sub },
+      { upsert: true }
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/logs', auth, needMongo, async (req, res) => {
+  const logs = await Execution.find({ ownerId: req.user.sub }).sort({ createdAt: -1 }).limit(150).lean();
+  res.json(logs);
+});
+
 
 
 // ========== HUB PÚBLICO ==========
