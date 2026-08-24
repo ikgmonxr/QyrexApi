@@ -384,24 +384,24 @@
   }
 
 
-  .voltils-credit{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;
+  .qyrex-credit{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;
     color:#fafafa;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.28);
     padding:5px 10px;border-radius:999px;text-decoration:none;transition:all .2s}
-  .voltils-credit:hover{background:rgba(255,255,255,.22);border-color:rgba(167,139,250,.5);color:#e9e5ff}
-  .voltils-credit svg{width:14px;height:14px;flex-shrink:0;opacity:.9}
-  .voltils-footer{text-align:center;padding:16px 12px 28px;font-size:11px;color:#5a5a6e;line-height:1.55}
-  .voltils-footer a{color:#f4f4f5;text-decoration:none;font-weight:600}
-  .voltils-footer a:hover{text-decoration:underline}
+  .qyrex-credit:hover{background:rgba(255,255,255,.22);border-color:rgba(167,139,250,.5);color:#e9e5ff}
+  .qyrex-credit svg{width:14px;height:14px;flex-shrink:0;opacity:.9}
+  .qyrex-footer{text-align:center;padding:16px 12px 28px;font-size:11px;color:#5a5a6e;line-height:1.55}
+  .qyrex-footer a{color:#f4f4f5;text-decoration:none;font-weight:600}
+  .qyrex-footer a:hover{text-decoration:underline}
   .protected-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 
   /* ===== Responsive polish PC + móvil ===== */
   @media (min-width: 901px) {
     .main-content { margin-left: 260px !important; }
-    .voltils-credit { font-size: 10px; }
+    .qyrex-credit { font-size: 10px; }
   }
   @media (max-width: 900px) {
-    .voltils-credit { font-size: 10px; padding: 4px 8px; }
-    .sidebar .voltils-credit { max-width: 100%; }
+    .qyrex-credit { font-size: 10px; padding: 4px 8px; }
+    .sidebar .qyrex-credit { max-width: 100%; }
     #appView main > .p-8, #appView main .p-8 { padding: 12px !important; }
     .card { border-radius: 12px; }
     .btn-primary, .btn-ghost { min-height: 44px; }
@@ -412,7 +412,7 @@
     .editor-body { min-height: 200px !important; max-height: 50vh !important; }
     table { font-size: 12px; }
     .user-pill { margin-bottom: 12px; }
-    .voltils-footer { padding: 20px 12px 40px; font-size: 11px; }
+    .qyrex-footer { padding: 20px 12px 40px; font-size: 11px; }
     #createOut { font-size: 12px !important; }
   }
   @media (max-width: 480px) {
@@ -446,7 +446,7 @@
   #vipParticleCanvas{display:none;position:fixed;inset:0;z-index:0;pointer-events:none}
   body.vip-compact .sidebar{width:78px !important}
   body.vip-compact .sidebar .nav-section,
-  body.vip-compact .sidebar .voltils-credit,
+  body.vip-compact .sidebar .qyrex-credit,
   body.vip-compact .user-pill .flex-1,
   body.vip-compact .user-pill button{display:none !important}
   body.vip-compact .sidebar .nav-item{justify-content:center;padding:12px 8px}
@@ -678,9 +678,9 @@
         <img src="https://i.ibb.co/wZbspqp2/8-DB6-D99-F-ED18-4697-93-FC-0-B83-CAAA971-A.png" alt="Qrex" class="w-9 h-9 rounded-xl object-cover"/>
         <div class="min-w-0">
           <div class="font-bold text-lg tracking-tight leading-tight">QrexApi</div>
-          <a class="voltils-credit mt-1" href="https://discord.gg/f4HRYHTCnz" target="_blank" rel="noopener" title="Ofuscador Voltils">
+          <a class="qyrex-credit mt-1" href="#" target="_blank" rel="noopener" title="Ofuscador QyrexObf">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zm0 9l-10 5 10 5 10-5-10-5z"/></svg>
-            Protected by Voltils
+            Protected by QyrexObf (beta)
           </a>
         </div>
       </div>
@@ -803,7 +803,7 @@
               <div class="min-w-0">
                 <div class="ov-kicker">QrexApi &middot; Panel privado</div>
                 <h1 class="ov-title">Tus scripts,<br/><em>bajo control.</em></h1>
-                <p class="ov-sub">Sube tu Lua, ofuscalo con Voltils, genera keys con HWID y mira quien lo ejecuta en vivo.</p>
+                <p class="ov-sub">Sube tu Lua, protégela con QyrexObf (beta), genera keys con HWID y mira quien lo ejecuta en vivo.</p>
               </div>
             </div>
             <div class="flex flex-wrap gap-3 mt-7">
@@ -1018,8 +1018,12 @@
               </div>
               <div>
                 <label class="field">Protección del código</label>
-                <input type="hidden" id="sObfMode" value="qrex"/>
-                <div class="text-xs" style="color:#5a5a6e">Ofuscación <b style="color:#fafafa">Voltils</b> activada automáticamente · <a href="https://discord.gg/f4HRYHTCnz" target="_blank" rel="noopener" style="color:#f4f4f5">Discord</a>.</div></div>
+                <label class="text-xs" style="color:#8b8b9e">Ofuscación</label>
+                <select id="sObfMode" class="w-full mt-1">
+                  <option value="qyrex" selected>QyrexObf (beta) — máximo</option>
+                  <option value="none">Sin ofuscar (código visible)</option>
+                </select>
+                <div class="text-xs mt-1" style="color:#5a5a6e">QyrexObf (beta): shell VM + hex. Elige "Sin ofuscar" solo para pruebas.</div></div>
               <div class="text-xs" style="color:#5a5a6e">Gratis: máx 15 scripts · VIP: ilimitados</div>
 
               <div class="tab-bar">
@@ -2089,7 +2093,7 @@ function renderScripts(list){
           '<div class="text-xs mt-0.5 truncate" style="color:#5a5a6e">'+esc(s.description||'Sin descripción')+'</div>'+
           '<div class="flex flex-wrap gap-2 mt-2">'+
             '<span class="chip">'+(s.executions||0)+' runs</span>'+
-            '<span class="chip">'+(s.obfMode==='local'?'XOR×5':(s.obfMode==='none'||s.doObfuscate===false)?'Plain+AT':'OFB')+'</span>'+
+            '<span class="chip">'+(s.obfMode==='none'||s.doObfuscate===false?'Plain':'QyrexObf (beta)')+'</span>'+
             (date ? '<span class="chip">'+esc(date)+'</span>' : '')+
             '<span class="chip" style="font-family:monospace;font-size:10px">'+esc((s.id||'').slice(0,10))+'…</span>'+
           '</div>'+
@@ -2139,7 +2143,7 @@ async function editScript(id){
     document.getElementById('sDesc').value = s.description || '';
     document.getElementById('sSource').value = s.source || '';
     const om = document.getElementById('sObfMode');
-    if (om) om.value = s.obfMode || (s.doObfuscate === false ? 'none' : 'voltils');
+    if (om) om.value = s.obfMode || (s.doObfuscate === false ? 'none' : 'qyrex');
     document.getElementById('createTitle').textContent = 'Edit Script';
     document.getElementById('createSubtitle').textContent = 'Modificando · ' + (s.name || id);
     document.getElementById('createBtnLabel').textContent = 'Save changes';
