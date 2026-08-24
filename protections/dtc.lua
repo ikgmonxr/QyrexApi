@@ -1,3 +1,6 @@
+--!nonstrict
+---@diagnostic disable: undefined-global, undefined-field, deprecated
+
 local _pc = pcall
 local _in = Instance.new
 local _gs = game.GetService
