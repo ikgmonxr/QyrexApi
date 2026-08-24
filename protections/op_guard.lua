@@ -1,4 +1,5 @@
 --!nonstrict
+---@diagnostic disable: undefined-global, undefined-field, need-check-nil, deprecated
 -- Full Luau Runtime Integrity Guard
 -- Defensive runtime validation for a protected Roblox/Luau payload.
 --
@@ -80,7 +81,7 @@ local function mix32(x)
 end
 
 local function step(tag)
-	GENERATION += 1
+	GENERATION = GENERATION + 1
 
 	local g = mix32(
 		u32(
@@ -233,7 +234,7 @@ runCheck("meta.index", 0x301, function()
 
 	local proxy = _setmetatable({}, {
 		__index = function(_, key)
-			hits += 1
+			hits = hits + 1
 
 			if key == "alpha" then
 				return 0x51
@@ -260,7 +261,7 @@ runCheck("meta.newindex", 0x302, function()
 
 	local proxy = _setmetatable({}, {
 		__newindex = function(_, key, value)
-			writes += 1
+			writes = writes + 1
 			storage[key] = value
 		end,
 	})
@@ -281,7 +282,7 @@ runCheck("meta.call", 0x303, function()
 
 	local fn = _setmetatable({}, {
 		__call = function(_, a, b, c)
-			calls += 1
+			calls = calls + 1
 			return (a * b) + c
 		end,
 	})
@@ -308,7 +309,7 @@ runCheck("meta.tostring", 0x305, function()
 
 	local t = _setmetatable({}, {
 		__tostring = function()
-			hits += 1
+			hits = hits + 1
 			return "__guard_object"
 		end,
 	})
@@ -333,7 +334,7 @@ runCheck("meta.add", 0x307, function()
 
 	local mt = {
 		__add = function(a, b)
-			hits += 1
+			hits = hits + 1
 			return a.v + b.v
 		end,
 	}
@@ -371,7 +372,7 @@ runCheck("meta.chain", 0x309, function()
 
 	local outer = _setmetatable({}, {
 		__index = function(_, key)
-			hits += 1
+			hits = hits + 1
 			return inner[key]
 		end,
 
@@ -3632,10 +3633,10 @@ runCheck("executor.capability_fingerprint", 0xB09, function()
 		end
 
 		if groupPresent then
-			fingerprint += bit
+			fingerprint = fingerprint + bit
 		end
 
-		bit *= 2
+		bit = bit * 2
 	end
 
 	STATE_D = mix32(_bxor(STATE_D, fingerprint, 0x0BADC0DE))
@@ -3653,7 +3654,7 @@ runCheck("executor.environment_shape", 0xB03, function()
 
 	for _, nsName in ipairs({ "syn", "crypt", "cache", "Drawing" }) do
 		if _type(readExecutorPath(nsName)) == "table" then
-			namespaces += 1
+			namespaces = namespaces + 1
 		end
 	end
 
@@ -3689,7 +3690,7 @@ runCheck("executor.environment_shape", 0xB03, function()
 
 	for _, name in ipairs(hintNames) do
 		if _type(readExecutorPath(name)) == "function" then
-			hints += 1
+			hints = hints + 1
 		end
 	end
 
