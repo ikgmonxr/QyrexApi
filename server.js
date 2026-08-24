@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const crypto = require('crypto');
+const { obfuscate: qyrexObfuscate } = require('./obfuscate');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -13,9 +14,6 @@ app.set('trust proxy', 1);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'cambia-este-secret-por-uno-largo';
 const MONGO_URI = process.env.MONGO_URI || '';
-const VOLTILS_URL = process.env.VOLTILS_URL || 'https://voltils.nxtdev.xyz/v1/obfuscate';
-const VOLTILS_KEY = process.env.VOLTILS_KEY || 'voltils_1267954195982581782_b24de9d9410f9e7a0dcb7db05b18cda598f9415f';
-const VOLTILS_PRESET = process.env.VOLTILS_PRESET || 'normal';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/auto';
 
@@ -513,43 +511,8 @@ function needMongo(req, res, next) {
   next();
 }
 
-async function obfuscateWithVoltils(code) {
-  if (!VOLTILS_KEY) throw new Error('VOLTILS_KEY no configurada');
-  const r = await fetch(VOLTILS_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + VOLTILS_KEY,
-      'Accept': 'application/json'
-    },
-    body: JSON.stringify({
-      code: String(code || ''),
-      preset: VOLTILS_PRESET || 'normal'
-    }),
-    signal: AbortSignal.timeout(90000)
-  });
-  const text = await r.text();
-  let data = null;
-  try { data = JSON.parse(text); } catch {}
-  // Accept several response shapes from Voltils
-  let out = null;
-  if (data) {
-    if (typeof data === 'string') out = data;
-    else if (typeof data.code === 'string') out = data.code;
-    else if (typeof data.result === 'string') out = data.result;
-    else if (typeof data.obfuscated === 'string') out = data.obfuscated;
-    else if (typeof data.output === 'string') out = data.output;
-    else if (data.data && typeof data.data === 'string') out = data.data;
-    else if (data.data && typeof data.data.code === 'string') out = data.data.code;
-  }
-  if (!out && text && !text.trim().startsWith('{') && !text.trim().startsWith('[')) {
-    out = text;
-  }
-  if (!r.ok || !out) {
-    const err = (data && (data.error || data.message || data.detail)) || ('Voltils HTTP ' + r.status + (text ? ': ' + text.slice(0, 120) : ''));
-    throw new Error(String(err));
-  }
-  return String(out);
+async function obfuscateWithQyrexObf(code) {
+  throw new Error('QyrexObf eliminado — usa QyrexObf local');
 }
 
 function xorBytes(buf, key) {
@@ -566,18 +529,21 @@ function wrapWithEnvLogger(source) {
 }
 
 async function resolveObfuscated(source, mode) {
-  // Ofuscación obligatoria vía Voltils API. Sin env logger.
   const src = String(source || '');
+  if (!src.trim()) throw new Error('Código vacío');
+  const m = String(mode || 'qyrex').toLowerCase().replace(/^qrex$/,'qyrex');
+  if (m === 'none' || m === 'false' || m === 'plain') {
+    return { code: src, doObfuscate: false, obfMode: 'none' };
+  }
   try {
-    let code = await obfuscateWithVoltils(src);
-    code = String(code || '');
-    if (!code.trim().startsWith('-- Protected by Voltils')) {
-      code = '-- Protected by Voltils · https://discord.gg/f4HRYHTCnz\n' + code;
+    const result = qyrexObfuscate(src, { antiTamper: true, vm: true, strings: true, numbers: true, renameLocals: true });
+    let code = (result && result.code) ? result.code : String(result || '');
+    if (!code.trim().startsWith('-- Protect by QyrexObf')) {
+      code = '-- Protect by QyrexObf v6 (beta)\n' + code;
     }
     return { code, doObfuscate: true, obfMode: 'qrex' };
   } catch (e) {
-    console.error('Obfuscator fail:', e.message);
-    // Re-lanzar para que el create muestre error (no guardar sin ofuscar)
+    console.error('QyrexObf fail:', e.message);
     throw new Error('Ofuscación falló: ' + (e.message || 'error'));
   }
 }
@@ -794,7 +760,8 @@ app.post('/api/scripts', auth, needMongo, async (req, res) => {
       const wantObf = req.body?.doObfuscate !== false && req.body?.doObfuscate !== 'false';
       obfMode = wantObf ? 'qrex' : 'none';
     }
-    if (!['none', 'qrex', 'local'].includes(obfMode)) obfMode = 'qrex';
+    if (obfMode === 'qyrex') obfMode = 'qrex';
+    if (!['none', 'qrex', 'local', 'qyrex'].includes(obfMode)) obfMode = 'qrex';
     const resolved = await resolveObfuscated(source, obfMode);
     const doc = await Script.create({
       ownerId: req.user.sub,
@@ -857,7 +824,7 @@ app.put('/api/scripts/:id', auth, needMongo, async (req, res) => {
         s.providerId = ''; s.providerName = '';
       }
     }
-    if (req.body?.obfMode && ['none','qrex','local'].includes(req.body.obfMode)) {
+    if (req.body?.obfMode && ['none','qrex','qyrex','local'].includes(req.body.obfMode)) {
       s.obfMode = req.body.obfMode;
       s.doObfuscate = s.obfMode !== 'none';
     } else if (req.body?.doObfuscate !== undefined) {
@@ -866,14 +833,16 @@ app.put('/api/scripts/:id', auth, needMongo, async (req, res) => {
     }
     if (source) {
       s.source = source;
-      const resolved = await resolveObfuscated(source, 'qrex');
+      const resolved = await resolveObfuscated(source, (req.body && req.body.obfMode) || 'qyrex');
       s.obfuscated = resolved.code;
       s.doObfuscate = resolved.doObfuscate;
       s.obfMode = resolved.obfMode;
+      s.obfMode = resolved.obfMode;
     } else if ((req.body?.obfMode || req.body?.doObfuscate !== undefined) && s.source) {
-      const resolved = await resolveObfuscated(s.source, 'qrex');
+      const resolved = await resolveObfuscated(s.source, (req.body && req.body.obfMode) || s.obfMode || 'qyrex');
       s.obfuscated = resolved.code;
       s.doObfuscate = resolved.doObfuscate;
+      s.obfMode = resolved.obfMode;
       s.obfMode = resolved.obfMode;
     }
     await s.save();
@@ -1540,7 +1509,7 @@ function buildKeyGateLua({ apiBase, providerName, getKeyLink, scriptCode }) {
   const close = ']' + eq + ']';
 
   return `-- QrexApi Key System
--- Protected by Voltils · https://discord.gg/f4HRYHTCnz
+-- Protected by QyrexObf · #
 local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -1882,7 +1851,7 @@ button{margin-top:14px;width:100%;border:0;border-radius:12px;padding:12px;font-
 <p>Provider: <b style="color:#ddd">${p}</b>. Copia la key y pégala en el KeySystem del script.</p>
 <div class="keybox" id="k">${k}</div>
 <button onclick="navigator.clipboard.writeText(document.getElementById('k').innerText);this.textContent='¡Copiada!'">Copiar key</button>
-<div class="meta">Protected by <b style="color:#c4b5fd">Voltils</b> · <a href="https://discord.gg/f4HRYHTCnz" style="color:#a78bfa">Discord</a></div>
+<div class="meta">Protected by <b style="color:#c4b5fd">QyrexObf</b> · <a href="#" style="color:#a78bfa">Discord</a></div>
 <div class="meta">Validez aprox: ${hours || 24}h · cada visita genera una key unica</div>
 </div></body></html>`;
 }
