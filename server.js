@@ -1399,6 +1399,27 @@ app.get('/api/admin/users', auth, needMongo, requireAdmin, async (req, res) => {
   })));
 });
 
+app.post('/api/admin/reset-password', auth, needMongo, requireAdmin, async (req, res) => {
+  try {
+    const { username, newPassword, adminCode } = req.body || {};
+    // This endpoint intentionally resets credentials; original passwords are never recoverable or exposed.
+    const requiredCode = process.env.ADMIN_ACTION_CODE || '123';
+    if (String(adminCode || '') !== requiredCode) return res.status(403).json({ error: 'Código de administrador incorrecto' });
+    const user = String(username || '').trim().toLowerCase();
+    if (!user) return res.status(400).json({ error: 'Usuario requerido' });
+    if (typeof newPassword !== 'string' || newPassword.length < 8 || newPassword.length > 128) {
+      return res.status(400).json({ error: 'La nueva contraseña debe tener entre 8 y 128 caracteres' });
+    }
+    const u = await User.findOne({ username: user });
+    if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+    u.passwordHash = hashPassword(newPassword);
+    await u.save();
+    res.json({ ok: true, username: u.username, message: 'Contraseña restablecida correctamente' });
+  } catch (e) {
+    res.status(500).json({ error: 'No se pudo restablecer la contraseña' });
+  }
+});
+
 app.post('/api/admin/premium', auth, needMongo, requireAdmin, async (req, res) => {
   try {
     const { username, premium, days } = req.body || {};
