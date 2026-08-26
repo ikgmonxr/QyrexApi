@@ -1228,6 +1228,18 @@ local Players = game:GetService(&quot;Players&quot;)
             <div class="card p-4"><div class="text-xs" style="color:#6b6b80">Premium</div><div class="text-2xl font-bold" style="color:#fbbf24" id="aPrem">—</div></div>
           </div>
 
+          <div class="card p-6 mb-6 max-w-xl" style="border-color:#33284f">
+            <div class="flex items-center justify-between gap-3 mb-1"><div class="text-sm font-semibold">🔐 Seguridad de cuentas</div><span class="text-[10px] px-2 py-1 rounded" style="background:#191624;color:#b8a7ff;border:1px solid #33284f">ADMIN</span></div>
+            <p class="text-xs mb-4" style="color:#6b6b80">Las contraseñas originales no se muestran. Puedes restablecer una contraseña tras confirmar el código de administrador.</p>
+            <div class="flex flex-wrap gap-2">
+              <input id="resetUser" placeholder="usuario" style="max-width:150px"/>
+              <input id="resetPass" type="password" placeholder="nueva contraseña" style="max-width:180px"/>
+              <input id="adminActionCode" type="password" placeholder="código admin" style="max-width:130px"/>
+              <button class="btn-primary text-sm" onclick="adminResetPassword()">Restablecer</button>
+            </div>
+            <div class="text-[11px] mt-3" style="color:#5a5a6e">Protección doble: sesión admin + código de acción.</div>
+          </div>
+
           <div class="card p-6 mb-6 max-w-xl">
             <div class="text-sm font-semibold mb-3">Dar / quitar Premium</div>
             <div class="flex flex-wrap gap-2">
@@ -2453,6 +2465,23 @@ async function loadAdminScripts(){
       '<tr><td>'+esc(s.name)+'</td><td style="color:#5a5a6e;font-size:11px">'+esc((s.ownerId||'').slice(0,8))+'…</td><td>'+(s.executions||0)+'</td><td><button class="btn-ghost text-xs" style="color:#f87171;border-color:#3a1a1a" onclick="adminDelScript(\''+s.id+'\')">Eliminar</button></td></tr>'
     ).join('') || '<tr><td colspan="4" class="text-center py-6" style="color:#5a5a6e">Vacío</td></tr>';
   } catch {}
+}
+
+async function adminResetPassword(){
+  const username = document.getElementById('resetUser').value.trim();
+  const newPassword = document.getElementById('resetPass').value;
+  const adminCode = document.getElementById('adminActionCode').value;
+  if (!username || !newPassword || !adminCode) { toast('Completa todos los campos', 'err'); return; }
+  if (newPassword.length < 8) { toast('Usa mínimo 8 caracteres', 'err'); return; }
+  if (!confirm('¿Restablecer la contraseña de @'+username+'?')) return;
+  try {
+    const r = await fetch('/api/admin/reset-password', { method:'POST', headers:headers(), body:JSON.stringify({ username, newPassword, adminCode }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    document.getElementById('resetPass').value='';
+    document.getElementById('adminActionCode').value='';
+    toast('Contraseña restablecida para @'+d.username, 'ok');
+  } catch(e) { toast(e.message || 'No se pudo restablecer', 'err'); }
 }
 
 async function adminSetPremium(on){
