@@ -212,10 +212,33 @@ const User = mongoose.models.QrexUser || mongoose.model('QrexUser', new mongoose
   passwordHash: { type: String, required: true },
   discordId: { type: String, default: null, index: true },
   avatar: { type: String, default: '' },
+  banner: { type: String, default: '' },
+  bio: { type: String, default: '' },
+  displayName: { type: String, default: '' },
   role: { type: String, default: 'user' }, // user | admin
   premium: { type: Boolean, default: false },
   premiumUntil: { type: Date, default: null },
   lastVipRedeemAt: { type: Date, default: null },
+  createdAt: { type: Date, default: Date.now },
+  lastLoginAt: { type: Date, default: null }
+}));
+
+const Session = mongoose.models.QrexSession || mongoose.model('QrexSession', new mongoose.Schema({
+  userId: { type: String, index: true, required: true },
+  sessionId: { type: String, unique: true, index: true, required: true },
+  userAgent: { type: String, default: '' },
+  ip: { type: String, default: '' },
+  createdAt: { type: Date, default: Date.now },
+  lastSeenAt: { type: Date, default: Date.now },
+  revokedAt: { type: Date, default: null }
+}));
+
+const Notification = mongoose.models.QrexNotification || mongoose.model('QrexNotification', new mongoose.Schema({
+  userId: { type: String, index: true, required: true },
+  type: { type: String, default: 'info' },
+  title: { type: String, required: true },
+  message: { type: String, default: '' },
+  read: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 }));
 
@@ -481,12 +504,10 @@ function verifyPassword(password, stored) {
   }
 }
 
-function signToken(user) {
-  return jwt.sign(
-    { sub: user._id.toString(), username: user.username },
-    JWT_SECRET,
-    { expiresIn: '30d' }
-  );
+async function signToken(user, req) {
+  const sessionId = crypto.randomBytes(18).toString('hex');
+  await Session.create({ userId: user._id.toString(), sessionId, userAgent: String(req?.headers?.['user-agent'] || '').slice(0, 300), ip: clientIp(req || {}) });
+  return jwt.sign({ sub: user._id.toString(), username: user.username, sid: sessionId }, JWT_SECRET, { expiresIn: '30d' });
 }
 
 function auth(req, res, next) {
@@ -495,6 +516,14 @@ function auth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'No autorizado' });
   try {
     req.user = jwt.verify(token, JWT_SECRET);
+    if (req.user.sid) {
+      Session.findOne({ sessionId: req.user.sid, userId: req.user.sub, revokedAt: null }).then(sess => {
+        if (!sess) return res.status(401).json({ error: 'Sesión cerrada o inválida' });
+        sess.lastSeenAt = new Date(); sess.save().catch(() => {});
+        next();
+      }).catch(() => res.status(401).json({ error: 'Sesión inválida' }));
+      return;
+    }
     next();
   } catch {
     return res.status(401).json({ error: 'Token invalido' });
@@ -636,7 +665,8 @@ app.post('/api/auth/register', needMongo, async (req, res) => {
       premium: isOwnerName ? true : false
     });
 
-    const token = signToken(doc);
+    const token = await signToken(doc, req);
+    Notification.create({userId:String(doc._id),type:'success',title:'Nuevo inicio de sesión',message:'Se inició sesión correctamente en QrexApi.'}).catch(()=>{});
     res.json({
       token,
       user: {
@@ -676,7 +706,9 @@ app.post('/api/auth/login', needMongo, async (req, res) => {
       await doc.save();
     }
 
-    const token = signToken(doc);
+    doc.lastLoginAt = new Date();
+    await doc.save();
+    const token = await signToken(doc, req);
     res.json({
       token,
       user: {
@@ -705,11 +737,83 @@ app.get('/api/me', auth, needMongo, async (req, res) => {
   res.json({
     id: user._id,
     username: user.username,
+    displayName: user.displayName || user.username,
+    bio: user.bio || '',
+    banner: user.banner || '',
     role: user.role || 'user',
     premium: isPremiumUser(user),
     avatar: user.avatar || '',
-    discordId: user.discordId || null
+    discordId: user.discordId || null,
+    createdAt: user.createdAt || null,
+    lastLoginAt: user.lastLoginAt || null
   });
+});
+
+// --- Cuenta, seguridad y sesiones ---
+function safeSession(s, currentSid) {
+  const ua = String(s.userAgent || 'Dispositivo desconocido');
+  return { id: s.sessionId, current: s.sessionId === currentSid, device: ua.slice(0, 120), createdAt: s.createdAt, lastSeenAt: s.lastSeenAt };
+}
+app.get('/api/account', auth, needMongo, async (req, res) => {
+  const u = await User.findById(req.user.sub);
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+  res.json({ username:u.username, displayName:u.displayName || u.username, bio:u.bio || '', banner:u.banner || '', role:u.role || 'user', premium:isPremiumUser(u), avatar:u.avatar || '', discordId:u.discordId || null, createdAt:u.createdAt, lastLoginAt:u.lastLoginAt || null });
+});
+app.patch('/api/account/profile', auth, needMongo, async (req, res) => {
+  const u = await User.findById(req.user.sub); if (!u) return res.status(404).json({error:'Usuario no encontrado'});
+  const username = typeof req.body?.username === 'string' ? req.body.username.trim().toLowerCase() : u.username;
+  const avatar = typeof req.body?.avatar === 'string' ? req.body.avatar.trim() : u.avatar;
+  const banner = typeof req.body?.banner === 'string' ? req.body.banner.trim() : u.banner;
+  const bio = typeof req.body?.bio === 'string' ? req.body.bio.trim().slice(0,160) : u.bio;
+  const displayName = typeof req.body?.displayName === 'string' ? req.body.displayName.trim().slice(0,32) : (u.displayName || username);
+  if (!username || username.length < 3 || !/^[a-z0-9_]+$/.test(username)) return res.status(400).json({error:'Usuario inválido: usa 3+ caracteres, letras, números o _'});
+  if (displayName.length < 2) return res.status(400).json({error:'Nombre visible demasiado corto'});
+  if (username !== u.username && await User.exists({username, _id:{$ne:u._id}})) return res.status(400).json({error:'Ese usuario ya existe'});
+  for (const [name, value] of [['avatar',avatar],['banner',banner]]) {
+    if (value && !/^https?:\/\/|^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(value)) return res.status(400).json({error:name+' debe ser una URL o imagen subida'});
+    if (value.startsWith('data:image/') && value.length > 700000) return res.status(400).json({error:name+' es demasiado grande (máx. ~700 KB)'});
+  }
+  u.username=username; u.avatar=avatar; u.banner=banner; u.bio=bio; u.displayName=displayName; await u.save();
+  res.json({message:'Perfil actualizado', username:u.username, displayName:u.displayName, bio:u.bio || '', banner:u.banner || '', avatar:u.avatar || ''});
+});
+
+app.get('/api/notifications', auth, needMongo, async (req,res)=>{
+  const uid=String(req.user.sub), now=Date.now();
+  const stored=await Notification.find({userId:uid}).sort({createdAt:-1}).limit(30).lean();
+  const dynamic=[{_id:'update-2026',type:'success',title:'QrexApi actualizado',message:'Perfil, banners, notificaciones y páginas públicas de scripts fueron mejorados.',read:false,createdAt:new Date(now-300000)}];
+  try {
+    const keys=await LicenseKey.find({ownerId:uid,enabled:true}).select('expiresAt').lean();
+    const soon=keys.filter(k=>k.expiresAt&&new Date(k.expiresAt).getTime()>now&&new Date(k.expiresAt).getTime()<now+72*3600*1000);
+    if(soon.length) dynamic.unshift({_id:'key-expiry',type:'warning',title:'API Key próxima a expirar',message:soon.length+' key(s) vencen dentro de 72 horas.',read:false,createdAt:new Date()});
+  } catch {}
+  res.json({notifications:dynamic.concat(stored).slice(0,30)});
+});
+app.post('/api/notifications/read-all', auth, needMongo, async (req,res)=>{ await Notification.updateMany({userId:String(req.user.sub),read:false},{$set:{read:true}}); res.json({ok:true}); });
+app.post('/api/account/password', auth, needMongo, async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {}; const u=await User.findById(req.user.sub);
+  if (!u || !verifyPassword(String(currentPassword||''),u.passwordHash)) return res.status(401).json({error:'La contraseña actual no es correcta'});
+  if (String(newPassword||'').length < 8) return res.status(400).json({error:'La nueva contraseña debe tener al menos 8 caracteres'});
+  u.passwordHash=hashPassword(newPassword); await u.save();
+  await Session.updateMany({userId:u._id.toString(), sessionId:{$ne:req.user.sid}, revokedAt:null}, {$set:{revokedAt:new Date()}});
+  res.json({message:'Contraseña actualizada. Se cerraron las demás sesiones.'});
+});
+app.get('/api/account/sessions', auth, needMongo, async (req,res)=>{
+  const list=await Session.find({userId:req.user.sub, revokedAt:null}).sort({lastSeenAt:-1}).limit(50).lean();
+  res.json({sessions:list.map(s=>safeSession(s,req.user.sid))});
+});
+app.delete('/api/account/sessions/:id', auth, needMongo, async (req,res)=>{
+  const s=await Session.findOneAndUpdate({userId:req.user.sub,sessionId:req.params.id,revokedAt:null},{$set:{revokedAt:new Date()}},{new:true});
+  if(!s) return res.status(404).json({error:'Sesión no encontrada'}); res.json({message:'Sesión cerrada'});
+});
+app.post('/api/account/sessions/logout-others', auth, needMongo, async (req,res)=>{
+  await Session.updateMany({userId:req.user.sub,sessionId:{$ne:req.user.sid},revokedAt:null},{$set:{revokedAt:new Date()}}); res.json({message:'Las demás sesiones fueron cerradas'});
+});
+app.delete('/api/account', auth, needMongo, async (req,res)=>{
+  const {password, confirmation}=req.body||{}; const u=await User.findById(req.user.sub);
+  if(!u || !verifyPassword(String(password||''),u.passwordHash)) return res.status(401).json({error:'Contraseña incorrecta'});
+  if(String(confirmation||'') !== 'ELIMINAR') return res.status(400).json({error:'Escribe ELIMINAR para confirmar'});
+  const id=u._id.toString(); await Promise.all([Script.deleteMany({ownerId:id}), ScriptVersion.deleteMany({ownerId:id}), Webhook.deleteMany({ownerId:id}), Asset.deleteMany({ownerId:id}), Provider.deleteMany({ownerId:id}), LicenseKey.deleteMany({ownerId:id}), Session.updateMany({userId:id,revokedAt:null},{$set:{revokedAt:new Date()}})]); await User.deleteOne({_id:u._id});
+  res.json({message:'Cuenta eliminada'});
 });
 
 function requireAdmin(req, res, next) {
@@ -1041,6 +1145,22 @@ async function serveRealScript(req, res, scriptId) {
   }
   res.type('text/plain').send(payload);
 }
+
+app.get('/api/public/script/:id', async (req,res)=>{
+  const s=await Script.findOne({id:req.params.id}).select('id name description keyMode providerName executions createdAt ownerId').lean();
+  if(!s) return res.status(404).json({error:'Script no encontrado'});
+  const owner=await User.findById(s.ownerId).select('username displayName avatar').lean(); const base=publicBase(req);
+  res.json({id:s.id,name:s.name,description:s.description||'',keyMode:s.keyMode||'keyless',providerName:s.providerName||'',executions:s.executions||0,createdAt:s.createdAt,owner:owner?{username:owner.username,displayName:owner.displayName||owner.username,avatar:owner.avatar||''}:null,publicUrl:base+'/script/'+s.id,downloadUrl:base+'/api/v1/luascripts/public/'+s.id+'/download',loadstring:'loadstring(game:HttpGet(\"'+base+'/api/v1/luascripts/public/'+s.id+'/download\"))()'});
+});
+app.get('/script/:id', async (req,res)=>{
+  try {
+    const s=await Script.findOne({id:req.params.id}).select('id name description keyMode providerName executions createdAt ownerId').lean();
+    if(!s) return res.status(404).send('<!doctype html><title>QrexApi</title><body style="margin:0;background:#07070c;color:#fff;font:16px system-ui;display:grid;place-items:center;height:100vh">Script no encontrado</body>');
+    const owner=await User.findById(s.ownerId).select('username displayName avatar').lean(); const base=publicBase(req);
+    const data=JSON.stringify({id:s.id,name:s.name,description:s.description||'',keyMode:s.keyMode||'keyless',providerName:s.providerName||'',executions:s.executions||0,owner:owner?{username:owner.username,displayName:owner.displayName||owner.username,avatar:owner.avatar||''}:null,downloadUrl:base+'/api/v1/luascripts/public/'+s.id+'/download',loadstring:'loadstring(game:HttpGet(\"'+base+'/api/v1/luascripts/public/'+s.id+'/download\"))()'});
+    res.type('html').send(`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${String(s.name||'Qrex Script').replace(/[<>]/g,'')}</title><style>*{box-sizing:border-box}body{margin:0;background:radial-gradient(900px 500px at 15% -10%,rgba(124,92,255,.18),transparent 60%),radial-gradient(700px 500px at 100% 100%,rgba(0,212,255,.10),transparent 60%),#07070c;color:#f5f5f7;font:14px Inter,system-ui,sans-serif;min-height:100vh}.wrap{max-width:980px;margin:auto;padding:38px 20px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}.brand{font-weight:800;font-size:18px;display:flex;gap:10px;align-items:center}.dot{width:10px;height:10px;border-radius:50%;background:#7c5cff;box-shadow:0 0 22px #7c5cff}.btn{border:1px solid #2a2a3c;background:#11111a;color:#fff;padding:10px 14px;border-radius:12px;text-decoration:none;cursor:pointer;font-weight:600}.primary{background:#f4f4f5;color:#08080d;border-color:#fff}.card{border:1px solid #24243a;border-radius:24px;background:rgba(15,15,23,.86);backdrop-filter:blur(16px);padding:28px;box-shadow:0 35px 100px rgba(0,0,0,.35)}.kicker{font-size:11px;text-transform:uppercase;letter-spacing:.16em;color:#777790}.title{font-size:clamp(34px,7vw,62px);line-height:1.02;margin:9px 0 14px}.desc{color:#a0a0b5;line-height:1.75;max-width:760px}.pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:15px}.pill{padding:7px 10px;border-radius:999px;border:1px solid #2b2b40;background:#0e0e15;color:#a7a7bc}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:20px}.code{margin-top:18px;border:1px solid #24243a;background:#09090f;padding:15px;border-radius:16px;color:#a5ebc8;font:12px/1.65 ui-monospace,Consolas,monospace;word-break:break-word}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}.stat{border:1px solid #24243a;background:#0d0d14;border-radius:16px;padding:15px}.small{font-size:11px;color:#66677e}.big{font-size:20px;font-weight:700;margin-top:5px}.foot{margin-top:18px;color:#5b5c73;font-size:11px}@media(max-width:700px){.stats{grid-template-columns:1fr}.card{padding:20px}.wrap{padding-top:22px}}</style></head><body><div class="wrap"><div class="top"><div class="brand"><span class="dot"></span>QrexApi</div><a class="btn" href="/">Dashboard</a></div><div class="card"><div class="kicker">Public script page</div><div class="title" id="name">Cargando…</div><div class="desc" id="desc"></div><div class="pills" id="pills"></div><div class="actions"><button class="btn primary" id="copy">Copiar Loadstring</button><a class="btn" id="download" target="_blank" rel="noopener">Abrir endpoint</a></div><div class="code" id="code"></div><div class="stats"><div class="stat"><div class="small">Ejecuciones</div><div class="big" id="exec">—</div></div><div class="stat"><div class="small">Modo</div><div class="big" id="mode">—</div></div><div class="stat"><div class="small">Autor</div><div class="big" id="owner">—</div></div></div><div class="foot">QrexApi · Página pública · El código fuente permanece protegido.</div></div></div><script>const d=${data};document.getElementById('name').textContent=d.name;document.getElementById('desc').textContent=d.description||'Script protegido servido por QrexApi.';document.getElementById('exec').textContent=Number(d.executions||0).toLocaleString();document.getElementById('mode').textContent=d.keyMode==='key'?'Key System':'Keyless';document.getElementById('owner').textContent=d.owner?.displayName||d.owner?.username||'QrexApi';document.getElementById('pills').innerHTML='<span class="pill">'+(d.providerName||'Public')+'</span><span class="pill">ID '+d.id.slice(0,10)+'</span>';document.getElementById('code').textContent=d.loadstring;document.getElementById('download').href=d.downloadUrl;document.getElementById('copy').onclick=async()=>{try{await navigator.clipboard.writeText(d.loadstring);document.getElementById('copy').textContent='✓ Copiado';setTimeout(()=>document.getElementById('copy').textContent='Copiar Loadstring',1800)}catch{}};</script></body></html>`);
+  } catch { res.status(500).send('QrexApi error'); }
+});
 
 app.get(['/api/raw/:id', '/api/v1/luascripts/public/:id/download', '/api/v1/luascripts/public/:id'], rawBurstLimiter, rawLimiter, async (req, res) => {
   const ip = clientIp(req);
@@ -2348,7 +2468,8 @@ app.get('/auth/discord/callback', async (req, res) => {
       await doc.save();
     }
 
-    const jwtToken = signToken(doc);
+    doc.lastLoginAt = new Date(); await doc.save();
+    const jwtToken = await signToken(doc, req);
     return res.redirect('/?token=' + encodeURIComponent(jwtToken));
   } catch (e) {
     console.error('discord oauth', e);
