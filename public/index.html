@@ -1456,6 +1456,32 @@ local Players = game:GetService(&quot;Players&quot;)
               </div>
               <button onclick="logout()" class="btn-ghost mt-4" style="color:#f87171;border-color:#3a1a1a">Cerrar sesión</button>
             </div>
+            <div class="card p-6" id="accountInfoCard">
+              <div class="flex items-center justify-between gap-3 mb-4"><div><div class="text-sm font-semibold">👤 Información de la cuenta</div><div class="text-xs mt-1" style="color:#5a5a6e">Gestiona tu perfil y revisa el estado de tu cuenta.</div></div><span id="accountRoleBadge" class="chip">CUENTA</span></div>
+              <div class="grid gap-3 sm:grid-cols-2 text-sm"><div class="p-3 rounded-xl" style="background:#101016;border:1px solid #252533"><div class="text-[11px]" style="color:#6b6b80">USUARIO</div><div id="accountUsername" class="font-mono mt-1">—</div></div><div class="p-3 rounded-xl" style="background:#101016;border:1px solid #252533"><div class="text-[11px]" style="color:#6b6b80">CREADA</div><div id="accountCreated" class="mt-1 text-xs">—</div></div><div class="p-3 rounded-xl" style="background:#101016;border:1px solid #252533"><div class="text-[11px]" style="color:#6b6b80">ÚLTIMO ACCESO</div><div id="accountLastLogin" class="mt-1 text-xs">—</div></div><div class="p-3 rounded-xl" style="background:#101016;border:1px solid #252533"><div class="text-[11px]" style="color:#6b6b80">ESTADO</div><div id="accountStatus" class="mt-1">—</div></div></div>
+            </div>
+
+            <div class="card p-6">
+              <div class="text-sm font-semibold mb-1">✏️ Editar perfil</div><div class="text-xs mb-4" style="color:#5a5a6e">Cambia tu nombre de usuario o avatar.</div>
+              <div class="grid gap-3"><div><label class="field">Nombre de usuario</label><input id="accountUsernameInput" placeholder="tu_usuario"/></div><div><label class="field">URL del avatar <span style="color:#5a5a6e">(opcional)</span></label><input id="accountAvatarInput" placeholder="https://..."/></div><button class="btn-primary w-fit" onclick="saveAccountProfile()">Guardar cambios</button></div>
+            </div>
+
+            <div class="card p-6">
+              <div class="text-sm font-semibold mb-1">🔑 Cambiar contraseña</div><div class="text-xs mb-4" style="color:#5a5a6e">Por seguridad, necesitas escribir tu contraseña actual.</div>
+              <div class="grid gap-3"><input id="currentPasswordInput" type="password" placeholder="contraseña actual"/><input id="newPasswordInput" type="password" placeholder="nueva contraseña (mínimo 8 caracteres)"/><input id="confirmPasswordInput" type="password" placeholder="repite la nueva contraseña"/><button class="btn-primary w-fit" onclick="changeMyPassword()">Actualizar contraseña</button></div>
+            </div>
+
+            <div class="card p-6">
+              <div class="flex items-center justify-between gap-3 mb-1"><div><div class="text-sm font-semibold">💻 Dispositivos y sesiones</div><div class="text-xs mt-1" style="color:#5a5a6e">Revisa dónde tienes la cuenta iniciada.</div></div><button class="btn-ghost text-xs" onclick="loadAccountSessions()">↻ Actualizar</button></div>
+              <div id="sessionsList" class="grid gap-2 mt-4"><div class="text-xs" style="color:#6b6b80">Cargando sesiones…</div></div>
+              <button class="btn-ghost mt-4 text-sm" style="color:#fbbf24" onclick="logoutOtherSessions()">Cerrar las demás sesiones</button>
+            </div>
+
+            <div class="card p-6" style="border-color:#4a2020">
+              <div class="text-sm font-semibold mb-1" style="color:#f87171">🗑️ Zona de peligro</div><div class="text-xs mb-4" style="color:#8b8b9e">Eliminar tu cuenta borra tus datos y cierra todas tus sesiones. Esta acción no se puede deshacer.</div>
+              <input id="deleteAccountPassword" type="password" placeholder="tu contraseña" class="mb-2"/><input id="deleteAccountConfirm" placeholder="escribe ELIMINAR para confirmar" class="mb-3"/><button class="btn-ghost text-sm" style="color:#f87171;border-color:#4a2020" onclick="deleteMyAccount()">Eliminar mi cuenta permanentemente</button>
+            </div>
+
             <div class="card p-6">
               <div class="text-sm font-semibold mb-1">Preferencias</div>
               <div class="text-xs mb-4" style="color:#5a5a6e">Opciones del panel</div>
@@ -1630,6 +1656,7 @@ function showApp(user){
   loadScripts();
   loadAnalytics();
   try { loadVipPrefs(); } catch(e) {}
+  try { loadAccountData(); loadAccountSessions(); } catch(e) {}
 }
 
 function toggleAnim(on){
@@ -1841,6 +1868,23 @@ function loadVipPrefs(){
 }
 // patch setTheme to require VIP for gold/ocean/mint/sunset
 const __setThemeOrig = typeof setTheme === 'function' ? setTheme : null;
+
+async function loadAccountData(){
+  try { const r=await fetch('/api/account',{headers:headers()}); if(!r.ok) return; const d=await r.json();
+    const fmt=v=>v?new Date(v).toLocaleString():'—';
+    document.getElementById('accountUsername').textContent='@'+d.username; document.getElementById('accountCreated').textContent=fmt(d.createdAt); document.getElementById('accountLastLogin').textContent=fmt(d.lastLoginAt);
+    document.getElementById('accountStatus').innerHTML=d.premium?'<b style="color:#fbbf24">✦ VIP activo</b>':'<span style="color:#a0a0b0">Cuenta activa</span>';
+    document.getElementById('accountRoleBadge').textContent=(d.role||'USER').toUpperCase();
+    document.getElementById('accountUsernameInput').value=d.username||''; document.getElementById('accountAvatarInput').value=d.avatar||'';
+  } catch(e) {}
+}
+async function saveAccountProfile(){ try { const username=document.getElementById('accountUsernameInput').value.trim(), avatar=document.getElementById('accountAvatarInput').value.trim(); const r=await fetch('/api/account/profile',{method:'PATCH',headers:headers(),body:JSON.stringify({username,avatar})}); const d=await r.json(); if(!r.ok) throw new Error(d.error||'No se pudo actualizar'); currentUser={...currentUser,username:d.username,avatar:d.avatar}; applyUserUi(currentUser); loadAccountData(); toast('Perfil actualizado','ok'); } catch(e){toast(e.message,'err')} }
+async function changeMyPassword(){ const currentPassword=document.getElementById('currentPasswordInput').value,newPassword=document.getElementById('newPasswordInput').value,confirmPassword=document.getElementById('confirmPasswordInput').value; if(newPassword!==confirmPassword){toast('Las contraseñas nuevas no coinciden','err');return} try{const r=await fetch('/api/account/password',{method:'POST',headers:headers(),body:JSON.stringify({currentPassword,newPassword})}),d=await r.json();if(!r.ok)throw new Error(d.error||'Error');['currentPasswordInput','newPasswordInput','confirmPasswordInput'].forEach(id=>document.getElementById(id).value='');toast(d.message,'ok');loadAccountSessions()}catch(e){toast(e.message,'err')} }
+function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function loadAccountSessions(){ const box=document.getElementById('sessionsList'); if(!box)return; try{const r=await fetch('/api/account/sessions',{headers:headers()});const d=await r.json();if(!r.ok)throw new Error(d.error); box.innerHTML=(d.sessions||[]).map(x=>'<div class="p-3 rounded-xl flex items-center justify-between gap-3" style="background:#101016;border:1px solid #252533"><div class="min-w-0"><div class="text-sm truncate">'+esc(x.device||'Dispositivo desconocido')+(x.current?' <span class="chip" style="font-size:9px">ACTUAL</span>':'')+'</div><div class="text-[10px] mt-1" style="color:#6b6b80">Última actividad: '+new Date(x.lastSeenAt).toLocaleString()+'</div></div>'+(x.current?'':'<button class="btn-ghost text-xs" onclick="closeAccountSession(\''+x.id+'\')">Cerrar</button>')+'</div>').join('')||'<div class="text-xs" style="color:#6b6b80">No hay sesiones activas.</div>'; }catch(e){box.innerHTML='<div class="text-xs" style="color:#f87171">No se pudieron cargar las sesiones.</div>'} }
+async function closeAccountSession(id){if(!confirm('¿Cerrar esta sesión?'))return;try{const r=await fetch('/api/account/sessions/'+encodeURIComponent(id),{method:'DELETE',headers:headers()}),d=await r.json();if(!r.ok)throw new Error(d.error);toast(d.message,'ok');loadAccountSessions()}catch(e){toast(e.message,'err')}}
+async function logoutOtherSessions(){if(!confirm('¿Cerrar todas las demás sesiones?'))return;try{const r=await fetch('/api/account/sessions/logout-others',{method:'POST',headers:headers()}),d=await r.json();if(!r.ok)throw new Error(d.error);toast(d.message,'ok');loadAccountSessions()}catch(e){toast(e.message,'err')}}
+async function deleteMyAccount(){const password=document.getElementById('deleteAccountPassword').value,confirmation=document.getElementById('deleteAccountConfirm').value;if(!confirm('ÚLTIMA CONFIRMACIÓN: ¿Eliminar permanentemente tu cuenta?'))return;try{const r=await fetch('/api/account',{method:'DELETE',headers:headers(),body:JSON.stringify({password,confirmation})}),d=await r.json();if(!r.ok)throw new Error(d.error);toast('Cuenta eliminada','ok');setTimeout(logout,700)}catch(e){toast(e.message,'err')}}
 
 function logout(){ token = ''; localStorage.removeItem('qrex_token'); location.reload(); }
 
